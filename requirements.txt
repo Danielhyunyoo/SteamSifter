@@ -1,0 +1,5 @@
+# Core dependencies for SteamSifter MVP
+# Add more as we build (LLM SDK, etc.) in later steps.
+
+requests==2.32.3       # HTTP calls to the Steam reviews API
+python-dotenv==1.0.1   # Load the API key from a local .env file

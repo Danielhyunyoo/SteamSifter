@@ -1,0 +1,24 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+
+# --- Virtual environment ---
+venv/
+.venv/
+env/
+
+# --- Secrets / config ---
+.env
+
+# --- Saved review data (we fetch this, don't commit it) ---
+data/*.json
+data/*.csv
+!data/.gitkeep
+
+# --- Editor / OS noise ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
