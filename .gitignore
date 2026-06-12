@@ -19,6 +19,7 @@ data/*.csv
 
 # --- Editor / OS noise ---
 .vscode/
+.vs/
 .idea/
 .DS_Store
 Thumbs.db
