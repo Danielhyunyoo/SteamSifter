@@ -3,7 +3,7 @@ classify_batch.py
 
 Classifies a whole file of reviews efficiently, in batches.
 
-Why batch? The free Gemini tier has a limited number of requests per minute.
+Why batch? Free LLM tiers limit how many requests you can make per minute.
 Sending one API call per review (300 calls) would be slow and would trip the
 rate limit. Instead we send ~20 reviews per call, so 300 reviews becomes ~15
 calls. We also pause briefly between calls to stay comfortably under the limit,
@@ -66,7 +66,7 @@ def build_batch_prompt(texts: list) -> str:
         texts: The review texts for this batch.
 
     Returns:
-        A prompt string asking Gemini to classify every listed review.
+        A prompt string asking the model to classify every listed review.
     """
     # Number each review so the model can reference it by index in its answer.
     numbered = []
@@ -99,7 +99,7 @@ def classify_batch(client, texts: list) -> list:
     Classify one batch of review texts, retrying if the call fails.
 
     Args:
-        client: A genai.Client.
+        client: An LLM client from get_client().
         texts:  The review texts for this batch.
 
     Returns:
@@ -110,7 +110,7 @@ def classify_batch(client, texts: list) -> list:
 
     for attempt in range(1, MAX_RETRIES + 1):
         try:
-            # response_schema as a list[...] makes Gemini return a JSON array.
+            # a list[...] schema makes the model return a JSON array.
             results = generate_json(client, prompt, list[BatchClassification])
             return results or []
         except Exception as err:
@@ -135,7 +135,7 @@ def classify_all(client, reviews: list) -> list:
     Classify every review, in batches, and attach sentiment + category to each.
 
     Args:
-        client:  A genai.Client.
+        client:  An LLM client from get_client().
         reviews: The list of review dicts (from the fetch step).
 
     Returns:

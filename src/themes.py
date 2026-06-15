@@ -74,7 +74,7 @@ def sample_reviews(reviews: list, sample_size: int) -> list:
 
 def discover_themes(client, reviews: list) -> list:
     """
-    Ask Gemini to propose a list of specific, named themes from a sample.
+    Ask the model to propose a list of specific, named themes from a sample.
 
     Returns:
         A list of ThemeDef objects.

@@ -1,7 +1,7 @@
 """
 classify.py
 
-Classifies a single Steam review using Gemini structured output.
+Classifies a single Steam review using structured LLM output.
 
 Each review gets:
   - sentiment:  positive / negative / neutral
@@ -23,7 +23,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-# Reuse the Gemini client + structured-output helper we built in llm.py.
+# Reuse the LLM client + structured-output helper we built in llm.py.
 from llm import get_client, generate_json
 
 
@@ -32,7 +32,7 @@ from llm import get_client, generate_json
 # ----------------------------------------------------------------------------
 
 # The fixed set of categories. Tuned for what actually shows up in game reviews.
-# Keeping this as a Literal forces Gemini to choose exactly one of these.
+# Keeping this as a Literal forces the model to choose exactly one of these.
 ReviewCategory = Literal[
     "bug",            # crashes, glitches, broken features
     "performance",    # lag, low FPS, poor optimization
@@ -48,7 +48,7 @@ ReviewCategory = Literal[
 
 
 class ReviewClassification(BaseModel):
-    """The structured result Gemini must return for one review."""
+    """The structured result the model must return for one review."""
     sentiment: Literal["positive", "negative", "neutral"]
     category: ReviewCategory
     is_constructive: bool   # True = real on-topic feedback; False = noise/junk
@@ -61,7 +61,7 @@ class ReviewClassification(BaseModel):
 
 def build_prompt(review_text: str) -> str:
     """
-    Build the instruction we send to Gemini for a single review.
+    Build the instruction we send to the model for a single review.
 
     We spell out the categories so the model understands what each bucket means,
     then hand it the review text to label.
@@ -92,7 +92,7 @@ def classify_review(client, review_text: str) -> ReviewClassification:
     Classify one review's text and return a ReviewClassification object.
 
     Args:
-        client:      A genai.Client from get_client().
+        client:      An LLM client from get_client().
         review_text: The raw review text to classify.
 
     Returns:
