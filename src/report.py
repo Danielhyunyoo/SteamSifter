@@ -64,16 +64,17 @@ def render_example(example: dict) -> str:
     )
 
 
-def render_theme_card(rank: int, theme: dict, max_count: int) -> str:
-    """Render one theme as a ranked card with a proportional bar."""
+def render_theme_card(rank: int, theme: dict, max_impact: float) -> str:
+    """Render one theme as a ranked card with an impact-proportional bar."""
     name = esc(theme["theme"])
     category = theme.get("category", "other")
     color = CATEGORY_COLORS.get(category, "#7f848e")
     count = theme["count"]
+    impact = theme.get("impact_score", 0)
     description = esc(theme.get("description", ""))
 
-    # Bar width as a percentage of the biggest theme, so the chart is readable.
-    width = int((count / max_count) * 100) if max_count else 0
+    # Bar width reflects IMPACT (playtime- and helpful-weighted), not raw count.
+    width = int((impact / max_impact) * 100) if max_impact else 0
 
     examples_html = "".join(render_example(e) for e in theme.get("examples", []))
 
@@ -83,7 +84,7 @@ def render_theme_card(rank: int, theme: dict, max_count: int) -> str:
         <span class="rank">#{rank}</span>
         <span class="theme-name">{name}</span>
         <span class="pill" style="background:{color}">{esc(category)}</span>
-        <span class="count">{count} reviews</span>
+        <span class="count">{count} reviews &middot; impact {impact:g}</span>
       </div>
       <div class="bar-track"><div class="bar-fill" style="width:{width}%;background:{color}"></div></div>
       <p class="description">{description}</p>
@@ -103,10 +104,10 @@ def build_html(themes: list, title: str, mode: str = "negative") -> str:
     # Choose the wording based on whether we're showing praise or complaints.
     if mode == "positive":
         subtitle = "Positive review analysis"
-        section_heading = "Double Down - ranked by number of reviews"
+        section_heading = "Double Down - ranked by impact (playtime + helpful votes)"
     else:
         subtitle = "Negative review analysis"
-        section_heading = "Fix These - ranked by number of reviews"
+        section_heading = "Fix These - ranked by impact (playtime + helpful votes)"
 
     # Separate real themes from the noise/unclear bucket.
     real_themes = [t for t in themes if t["theme"] not in (UNCLEAR_LABEL, NOISE_LABEL)]
@@ -114,11 +115,11 @@ def build_html(themes: list, title: str, mode: str = "negative") -> str:
     noise = next((t for t in themes if t["theme"] == NOISE_LABEL), None)
 
     total_reviews = sum(t["count"] for t in themes)
-    max_count = max((t["count"] for t in real_themes), default=1)
+    max_impact = max((t.get("impact_score", 0) for t in real_themes), default=1) or 1
 
-    # Build the ranked cards.
+    # Build the ranked cards (already ordered by impact from the themes step).
     cards = "".join(
-        render_theme_card(i + 1, t, max_count) for i, t in enumerate(real_themes)
+        render_theme_card(i + 1, t, max_impact) for i, t in enumerate(real_themes)
     )
 
     # A muted note for the low-signal pile, shown honestly rather than hidden.

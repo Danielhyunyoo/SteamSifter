@@ -19,6 +19,7 @@ Run directly on a classified file:
 
 import argparse
 import json
+import math
 import os
 import time
 
@@ -189,15 +190,32 @@ def assign_themes(client, reviews: list, themes: list) -> list:
 # Aggregate: count reviews per theme and pick representative examples
 # ----------------------------------------------------------------------------
 
+def review_impact(review: dict) -> float:
+    """
+    Estimate how much weight one review should carry.
+
+    A review counts more when it comes from a credible source: someone with lots
+    of playtime, and/or whose review the community marked helpful. We use a log
+    scale so a handful of extreme outliers (10,000 hours, 5,000 upvotes) don't
+    completely drown out everyone else.
+
+    Baseline (0 hours, 0 helpful votes) = 1.0, so every review still counts once.
+    """
+    hours = review.get("playtime_at_review_hours", 0) or 0
+    helpful = review.get("helpful_votes", 0) or 0
+    return 1.0 + math.log10(1 + hours) + math.log10(1 + helpful)
+
+
 def aggregate_themes(reviews: list, themes: list) -> list:
     """
-    Build the final theme records: count + example quotes per theme.
+    Build the final theme records: count, impact score, and example quotes.
 
-    Examples are chosen by 'most helpful votes, then most playtime', so the
-    quotes shown come from the most credible reviewers.
+    Themes are ranked by IMPACT, not raw count. Impact sums each review's weight
+    (see review_impact), so a theme raised by experienced, upvoted players ranks
+    above one raised by an equal number of low-effort drive-by reviews.
 
     Returns:
-        A list of theme dicts sorted by count (most common first).
+        A list of theme dicts sorted by impact score (highest first).
     """
     # Description/category lookup from the discovered themes.
     meta = {t.name: {"description": t.description, "category": t.category} for t in themes}
@@ -224,17 +242,21 @@ def aggregate_themes(reviews: list, themes: list) -> list:
             for r in items_sorted[:EXAMPLES_PER_THEME]
         ]
 
+        # Impact score: the summed weight of every review under this theme.
+        impact = round(sum(review_impact(r) for r in items), 1)
+
         info = meta.get(theme_name, {"description": "", "category": "other"})
         records.append({
             "theme": theme_name,
             "category": info["category"],
             "description": info["description"],
             "count": len(items),
+            "impact_score": impact,
             "examples": examples,
         })
 
-    # Most common themes first.
-    records.sort(key=lambda rec: rec["count"], reverse=True)
+    # Highest-impact themes first.
+    records.sort(key=lambda rec: rec["impact_score"], reverse=True)
     return records
 
 
@@ -295,6 +317,7 @@ def main():
             "description": "Low-signal reviews filtered out before theming: jokes, "
                            "one-liners, off-topic rants, and spam.",
             "count": len(noise),
+            "impact_score": round(sum(review_impact(r) for r in noise), 1),
             "examples": [
                 {
                     "text": r["text"][:300],
@@ -313,9 +336,10 @@ def main():
 
     # Print the ranked themes.
     print(f"\nSaved {len(records)} themes to {out_path}\n")
-    print("Themes ranked by number of reviews:")
+    print("Themes ranked by impact (review count in parentheses):")
     for rec in records:
-        print(f"  {rec['count']:>3}  {rec['theme']}  [{rec['category']}]")
+        print(f"  impact {rec.get('impact_score', 0):>6}  ({rec['count']:>3})  "
+              f"{rec['theme']}  [{rec['category']}]")
 
 
 if __name__ == "__main__":
