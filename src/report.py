@@ -36,6 +36,13 @@ CATEGORY_COLORS = {
     "other": "#7f848e",
 }
 
+# Colors for the sentiment overview bar.
+SENTIMENT_COLORS = {
+    "positive": "#98c379",
+    "negative": "#e06c75",
+    "neutral": "#abb2bf",
+}
+
 # The label used for constructive reviews that matched no theme.
 UNCLEAR_LABEL = "unclear"
 
@@ -93,6 +100,62 @@ def render_theme_card(rank: int, theme: dict, max_impact: float) -> str:
     """
 
 
+def render_overview(records: list) -> str:
+    """
+    Build the at-a-glance overview: an overall sentiment bar and a category
+    distribution. Reads the per-theme sentiment_counts saved by the themes step.
+    """
+    # Sentiment totals across every record (themes + unclear + noise).
+    sent = {"positive": 0, "negative": 0, "neutral": 0}
+    for r in records:
+        for key, val in (r.get("sentiment_counts") or {}).items():
+            sent[key] = sent.get(key, 0) + val
+    sent_total = sum(sent.values())
+
+    # Category totals over meaningful feedback (everything except the noise bucket).
+    cats = {}
+    for r in records:
+        if r["theme"] == NOISE_LABEL:
+            continue
+        cats[r["category"]] = cats.get(r["category"], 0) + r["count"]
+    cat_total = sum(cats.values()) or 1
+
+    # Stacked sentiment bar + legend.
+    segments, legend = "", ""
+    for key in ("positive", "negative", "neutral"):
+        val = sent.get(key, 0)
+        pct = (val / sent_total * 100) if sent_total else 0
+        if val:
+            segments += f'<div class="seg" style="width:{pct:.1f}%;background:{SENTIMENT_COLORS[key]}"></div>'
+        legend += (
+            f'<span class="legend-item"><span class="dot" style="background:{SENTIMENT_COLORS[key]}"></span>'
+            f'{key} {val}</span>'
+        )
+
+    # Category bars, most common first.
+    cat_rows = ""
+    for category, c in sorted(cats.items(), key=lambda kv: kv[1], reverse=True):
+        pct = c / cat_total * 100
+        color = CATEGORY_COLORS.get(category, "#7f848e")
+        cat_rows += (
+            '<div class="cat-row">'
+            f'<span class="cat-label">{esc(category)}</span>'
+            f'<span class="cat-track"><span class="cat-fill" style="width:{pct:.1f}%;background:{color}"></span></span>'
+            f'<span class="cat-num">{c}</span>'
+            '</div>'
+        )
+
+    return (
+        '<div class="overview">'
+        '<div class="ov-title">Sentiment</div>'
+        f'<div class="sentiment-bar">{segments}</div>'
+        f'<div class="legend">{legend}</div>'
+        '<div class="ov-title">By category</div>'
+        f'<div class="cat-list">{cat_rows}</div>'
+        '</div>'
+    )
+
+
 def build_html(themes: list, title: str, mode: str = "negative") -> str:
     """
     Assemble the full HTML document from the theme records.
@@ -142,6 +205,8 @@ def build_html(themes: list, title: str, mode: str = "negative") -> str:
 
     generated = date.today().strftime("%B %d, %Y")
 
+    overview_html = render_overview(themes)
+
     # The CSS lives inline so the report is a single portable file. Note that
     # every literal CSS brace is doubled ({{ }}) because this is an f-string.
     return f"""<!DOCTYPE html>
@@ -173,6 +238,19 @@ def build_html(themes: list, title: str, mode: str = "negative") -> str:
   .badges {{ display: block; margin-top: 4px; }}
   .badge {{ display: inline-block; font-size: 11px; background: #eef0f3; color: #5b6470; border-radius: 4px; padding: 1px 7px; margin-right: 6px; }}
   .unclear {{ background: #fff8e6; border: 1px solid #f0e2b8; border-radius: 10px; padding: 16px 18px; font-size: 14px; color: #5c531f; }}
+  .overview {{ background: #fff; border: 1px solid #e3e6ea; border-radius: 10px; padding: 18px 20px; margin-bottom: 18px; }}
+  .ov-title {{ font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: #8a929e; margin: 10px 0 8px; font-weight: 700; }}
+  .ov-title:first-child {{ margin-top: 0; }}
+  .sentiment-bar {{ display: flex; height: 14px; border-radius: 7px; overflow: hidden; background: #eef0f3; }}
+  .seg {{ height: 100%; }}
+  .legend {{ margin: 8px 0 4px; font-size: 12px; color: #5b6470; }}
+  .legend-item {{ margin-right: 14px; text-transform: lowercase; }}
+  .dot {{ display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; vertical-align: middle; }}
+  .cat-row {{ display: flex; align-items: center; gap: 8px; margin: 5px 0; font-size: 12px; }}
+  .cat-label {{ width: 95px; color: #3c4149; text-transform: lowercase; }}
+  .cat-track {{ flex: 1; background: #eef0f3; border-radius: 5px; height: 8px; overflow: hidden; }}
+  .cat-fill {{ display: block; height: 100%; border-radius: 5px; }}
+  .cat-num {{ width: 34px; text-align: right; color: #6b7280; font-weight: 600; }}
 </style>
 </head>
 <body>
@@ -182,6 +260,8 @@ def build_html(themes: list, title: str, mode: str = "negative") -> str:
     <div class="meta">{esc(subtitle)} &middot; {total_reviews} reviews &middot; Generated {generated}</div>
   </header>
   <main>
+    <h2>Overview</h2>
+    {overview_html}
     <h2>{esc(section_heading)}</h2>
     {cards}
     <h2>Low-signal reviews</h2>

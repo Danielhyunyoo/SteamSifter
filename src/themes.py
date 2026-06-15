@@ -206,6 +206,15 @@ def review_impact(review: dict) -> float:
     return 1.0 + math.log10(1 + hours) + math.log10(1 + helpful)
 
 
+def _count_sentiments(reviews: list) -> dict:
+    """Tally positive/negative/neutral across a set of reviews."""
+    counts = {"positive": 0, "negative": 0, "neutral": 0}
+    for r in reviews:
+        s = r.get("sentiment", "neutral")
+        counts[s] = counts.get(s, 0) + 1
+    return counts
+
+
 def aggregate_themes(reviews: list, themes: list) -> list:
     """
     Build the final theme records: count, impact score, and example quotes.
@@ -252,12 +261,61 @@ def aggregate_themes(reviews: list, themes: list) -> list:
             "description": info["description"],
             "count": len(items),
             "impact_score": impact,
+            "sentiment_counts": _count_sentiments(items),
             "examples": examples,
         })
 
     # Highest-impact themes first.
     records.sort(key=lambda rec: rec["impact_score"], reverse=True)
     return records
+
+
+def analyze_reviews(client, all_reviews: list):
+    """
+    Run the full theming analysis on a list of classified reviews.
+
+    Splits noise from constructive feedback, discovers themes, assigns every
+    constructive review to one, aggregates into ranked records, and appends a
+    'noise' record so the report can show how much was filtered out.
+
+    Returns:
+        (records, num_constructive, num_noise, themes)
+    """
+    # Noise filter: only theme the constructive reviews. Default to constructive
+    # for older files that lack the is_constructive flag.
+    reviews = [r for r in all_reviews if r.get("is_constructive", True)]
+    noise = [r for r in all_reviews if not r.get("is_constructive", True)]
+
+    themes = discover_themes(client, reviews)
+    reviews = assign_themes(client, reviews, themes)
+    records = aggregate_themes(reviews, themes)
+
+    # Append a 'noise' record summarizing what was filtered out.
+    if noise:
+        noise_sorted = sorted(
+            noise,
+            key=lambda r: (r.get("helpful_votes", 0), r.get("playtime_at_review_hours", 0)),
+            reverse=True,
+        )
+        records.append({
+            "theme": "noise",
+            "category": "other",
+            "description": "Low-signal reviews filtered out before theming: jokes, "
+                           "one-liners, off-topic rants, and spam.",
+            "count": len(noise),
+            "impact_score": round(sum(review_impact(r) for r in noise), 1),
+            "sentiment_counts": _count_sentiments(noise),
+            "examples": [
+                {
+                    "text": r["text"][:300],
+                    "helpful_votes": r.get("helpful_votes", 0),
+                    "playtime_at_review_hours": r.get("playtime_at_review_hours", 0),
+                }
+                for r in noise_sorted[:EXAMPLES_PER_THEME]
+            ],
+        })
+
+    return records, len(reviews), len(noise), themes
 
 
 # ----------------------------------------------------------------------------
@@ -279,54 +337,13 @@ def main():
     with open(args.data_file, encoding="utf-8") as f:
         all_reviews = json.load(f)
 
-    # Noise filter: only theme the constructive reviews. Anything flagged as
-    # noise during classification (jokes, one-liners, off-topic, spam) is set
-    # aside. Default to constructive=True for older files without the flag.
-    reviews = [r for r in all_reviews if r.get("is_constructive", True)]
-    noise = [r for r in all_reviews if not r.get("is_constructive", True)]
-
     print(f"Loaded {len(all_reviews)} reviews from {args.data_file}")
-    print(f"  Constructive: {len(reviews)}  |  Noise filtered out: {len(noise)}\n")
 
     client = get_client()
-
-    # Pass 1: discover.
-    print("Discovering themes from a sample...")
-    themes = discover_themes(client, reviews)
-    print(f"Found {len(themes)} themes:")
-    for t in themes:
-        print(f"  - {t.name} ({t.category})")
-    print()
-
-    # Pass 2: assign.
-    reviews = assign_themes(client, reviews, themes)
-
-    # Aggregate the constructive reviews into theme records.
-    records = aggregate_themes(reviews, themes)
-
-    # Add a 'noise' record so the report can show how much was filtered out.
-    if noise:
-        noise_sorted = sorted(
-            noise,
-            key=lambda r: (r.get("helpful_votes", 0), r.get("playtime_at_review_hours", 0)),
-            reverse=True,
-        )
-        records.append({
-            "theme": "noise",
-            "category": "other",
-            "description": "Low-signal reviews filtered out before theming: jokes, "
-                           "one-liners, off-topic rants, and spam.",
-            "count": len(noise),
-            "impact_score": round(sum(review_impact(r) for r in noise), 1),
-            "examples": [
-                {
-                    "text": r["text"][:300],
-                    "helpful_votes": r.get("helpful_votes", 0),
-                    "playtime_at_review_hours": r.get("playtime_at_review_hours", 0),
-                }
-                for r in noise_sorted[:EXAMPLES_PER_THEME]
-            ],
-        })
+    print("Discovering themes and assigning reviews (this calls the model)...")
+    records, n_constructive, n_noise, themes = analyze_reviews(client, all_reviews)
+    print(f"  Constructive: {n_constructive}  |  Noise filtered out: {n_noise}")
+    print(f"  Themes found: {len(themes)}")
 
     folder = os.path.dirname(args.data_file) or "."
     base = os.path.basename(args.data_file).replace("classified_", "")
