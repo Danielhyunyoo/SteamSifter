@@ -51,6 +51,7 @@ class BatchClassification(BaseModel):
     index: int
     sentiment: Literal["positive", "negative", "neutral"]
     category: ReviewCategory
+    is_constructive: bool   # True = real on-topic feedback; False = noise/junk
 
 
 # ----------------------------------------------------------------------------
@@ -78,9 +79,12 @@ def build_batch_prompt(texts: list) -> str:
     return (
         "You are classifying players' reviews of a video game on Steam.\n"
         "For EACH review below, return its index, sentiment "
-        "(positive/negative/neutral), and the single best category from:\n"
+        "(positive/negative/neutral), the single best category from:\n"
         "  bug, performance, gameplay, cheating, community, monetization, "
-        "content, ui_ux, praise, other.\n\n"
+        "content, ui_ux, praise, other,\n"
+        "and is_constructive: true if the review gives real, on-topic feedback "
+        "about the game; false if it is noise (a joke, meme, one-word or empty "
+        "review, off-topic rant, or review-bomb spam with no useful content).\n\n"
         "Return one classification object per review.\n\n"
         f"{reviews_block}"
     )
@@ -162,10 +166,12 @@ def classify_all(client, reviews: list) -> list:
             if label is not None:
                 review["sentiment"] = label.sentiment
                 review["category"] = label.category
+                review["is_constructive"] = label.is_constructive
             else:
                 # Fallback: we still know if Steam marked it up or down.
                 review["sentiment"] = "positive" if review.get("voted_up") else "negative"
                 review["category"] = "other"
+                review["is_constructive"] = True  # don't filter what we are unsure about
             enriched.append(review)
 
         # Pause between batches to respect the free-tier rate limit.

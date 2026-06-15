@@ -255,9 +255,16 @@ def main():
     args = parser.parse_args()
 
     with open(args.data_file, encoding="utf-8") as f:
-        reviews = json.load(f)
+        all_reviews = json.load(f)
 
-    print(f"Loaded {len(reviews)} reviews from {args.data_file}\n")
+    # Noise filter: only theme the constructive reviews. Anything flagged as
+    # noise during classification (jokes, one-liners, off-topic, spam) is set
+    # aside. Default to constructive=True for older files without the flag.
+    reviews = [r for r in all_reviews if r.get("is_constructive", True)]
+    noise = [r for r in all_reviews if not r.get("is_constructive", True)]
+
+    print(f"Loaded {len(all_reviews)} reviews from {args.data_file}")
+    print(f"  Constructive: {len(reviews)}  |  Noise filtered out: {len(noise)}\n")
 
     client = get_client()
 
@@ -272,8 +279,31 @@ def main():
     # Pass 2: assign.
     reviews = assign_themes(client, reviews, themes)
 
-    # Aggregate + save.
+    # Aggregate the constructive reviews into theme records.
     records = aggregate_themes(reviews, themes)
+
+    # Add a 'noise' record so the report can show how much was filtered out.
+    if noise:
+        noise_sorted = sorted(
+            noise,
+            key=lambda r: (r.get("helpful_votes", 0), r.get("playtime_at_review_hours", 0)),
+            reverse=True,
+        )
+        records.append({
+            "theme": "noise",
+            "category": "other",
+            "description": "Low-signal reviews filtered out before theming: jokes, "
+                           "one-liners, off-topic rants, and spam.",
+            "count": len(noise),
+            "examples": [
+                {
+                    "text": r["text"][:300],
+                    "helpful_votes": r.get("helpful_votes", 0),
+                    "playtime_at_review_hours": r.get("playtime_at_review_hours", 0),
+                }
+                for r in noise_sorted[:EXAMPLES_PER_THEME]
+            ],
+        })
 
     folder = os.path.dirname(args.data_file) or "."
     base = os.path.basename(args.data_file).replace("classified_", "")

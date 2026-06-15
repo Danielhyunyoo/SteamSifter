@@ -51,6 +51,7 @@ class ReviewClassification(BaseModel):
     """The structured result Gemini must return for one review."""
     sentiment: Literal["positive", "negative", "neutral"]
     category: ReviewCategory
+    is_constructive: bool   # True = real on-topic feedback; False = noise/junk
     reason: str   # one short sentence explaining the choice
 
 
@@ -78,7 +79,9 @@ def build_prompt(review_text: str) -> str:
         "  - ui_ux: menus, interface, controls, usability\n"
         "  - praise: general positive feedback\n"
         "  - other: none of the above\n\n"
-        "Also give the overall sentiment (positive, negative, or neutral) and a "
+        "Also give the overall sentiment (positive, negative, or neutral), "
+        "is_constructive (true if the review gives real on-topic feedback, false "
+        "if it is a joke, one-word, off-topic, or spam review), and a "
         "one-sentence reason.\n\n"
         f"Review:\n{review_text}"
     )
@@ -142,6 +145,7 @@ def main():
     print("CLASSIFICATION:")
     print(f"  sentiment = {result.sentiment}")
     print(f"  category  = {result.category}")
+    print(f"  is_constructive = {result.is_constructive}")
     print(f"  reason    = {result.reason}")
     print("=" * 70)
 

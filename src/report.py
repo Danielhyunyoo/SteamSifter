@@ -36,8 +36,11 @@ CATEGORY_COLORS = {
     "other": "#7f848e",
 }
 
-# The label used for reviews that matched no theme (noise / low-signal).
+# The label used for constructive reviews that matched no theme.
 UNCLEAR_LABEL = "unclear"
+
+# The label used for reviews filtered out as noise before theming.
+NOISE_LABEL = "noise"
 
 
 def esc(text) -> str:
@@ -106,8 +109,9 @@ def build_html(themes: list, title: str, mode: str = "negative") -> str:
         section_heading = "Fix These - ranked by number of reviews"
 
     # Separate real themes from the noise/unclear bucket.
-    real_themes = [t for t in themes if t["theme"] != UNCLEAR_LABEL]
+    real_themes = [t for t in themes if t["theme"] not in (UNCLEAR_LABEL, NOISE_LABEL)]
     unclear = next((t for t in themes if t["theme"] == UNCLEAR_LABEL), None)
+    noise = next((t for t in themes if t["theme"] == NOISE_LABEL), None)
 
     total_reviews = sum(t["count"] for t in themes)
     max_count = max((t["count"] for t in real_themes), default=1)
@@ -118,16 +122,22 @@ def build_html(themes: list, title: str, mode: str = "negative") -> str:
     )
 
     # A muted note for the low-signal pile, shown honestly rather than hidden.
-    unclear_html = ""
-    if unclear:
-        pct = round((unclear["count"] / total_reviews) * 100) if total_reviews else 0
-        unclear_html = (
-            '<div class="unclear">'
-            f"<strong>{unclear['count']} reviews ({pct}%)</strong> did not match a "
-            "clear theme. These are mostly low-signal: jokes, one-liners, and "
-            "off-topic rants. A future noise filter will set these aside "
-            "automatically.</div>"
+    low_signal_parts = []
+    if noise:
+        npct = round((noise["count"] / total_reviews) * 100) if total_reviews else 0
+        low_signal_parts.append(
+            f"<strong>{noise['count']} reviews ({npct}%)</strong> were filtered out "
+            "as noise (jokes, one-liners, off-topic rants, and spam) before theming."
         )
+    if unclear:
+        upct = round((unclear["count"] / total_reviews) * 100) if total_reviews else 0
+        low_signal_parts.append(
+            f"<strong>{unclear['count']} reviews ({upct}%)</strong> were constructive "
+            "but did not match a specific theme."
+        )
+    unclear_html = ""
+    if low_signal_parts:
+        unclear_html = '<div class="unclear">' + " ".join(low_signal_parts) + "</div>"
 
     generated = date.today().strftime("%B %d, %Y")
 
