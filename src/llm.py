@@ -1,75 +1,80 @@
 """
 llm.py
 
-Thin wrapper around the Google Gemini API (google-genai SDK) for SteamSifter.
+Provider-agnostic wrapper for structured LLM output.
 
-Responsibilities:
-  - Load the API key from the local .env file.
-  - Create a reusable Gemini client.
-  - Provide a helper that asks Gemini for STRUCTURED (JSON-schema) output, so
-    every call returns predictable, typed data instead of free-form text.
+SteamSifter can talk to either:
+  - Google Gemini  (free tier, set LLM_PROVIDER=gemini)
+  - OpenAI         (pay-as-you-go, set LLM_PROVIDER=openai)
 
-Running this file directly performs a small connectivity test that classifies
-one sample review, confirming both the API key and structured output work.
+The rest of the codebase only calls get_client() and generate_json(), so
+switching providers is just a setting in .env. generate_json() always returns
+data parsed into the Pydantic schema you pass in, regardless of provider.
+
+Relevant .env settings:
+  LLM_PROVIDER     "gemini" (default) or "openai"
+  GEMINI_API_KEY   your Gemini key   (falls back to LLM_API_KEY)
+  OPENAI_API_KEY   your OpenAI key   (falls back to LLM_API_KEY)
+  LLM_MODEL        optional model override; blank uses the provider default
+
+Run "python src/llm.py" for a quick connectivity self-test.
 """
 
 import os
+import typing
 
 from dotenv import load_dotenv
-from google import genai
-from google.genai import types
-from pydantic import BaseModel
+from pydantic import BaseModel, create_model
 
 
-# The Gemini model we use. "flash-lite" is the lightest model and has the most
-# generous free-tier daily quota, which matters because we make many calls.
-# (Quotas are per-model, so each model has its own separate daily allowance.)
-DEFAULT_MODEL = "gemini-2.5-flash-lite"
-
-# Load variables from a local .env file into the environment.
-# This is a no-op if .env does not exist.
+# Load variables from a local .env file into the environment (no-op if missing).
 load_dotenv()
 
+# Which provider to use, and the default model for each.
+PROVIDER = os.environ.get("LLM_PROVIDER", "gemini").lower()
+GEMINI_DEFAULT_MODEL = "gemini-2.5-flash-lite"
+OPENAI_DEFAULT_MODEL = "gpt-4.1-mini"
 
-def get_client() -> genai.Client:
+
+def _default_model() -> str:
+    """Pick the model: an explicit LLM_MODEL override, else the provider default."""
+    override = os.environ.get("LLM_MODEL")
+    if override:
+        return override
+    return OPENAI_DEFAULT_MODEL if PROVIDER == "openai" else GEMINI_DEFAULT_MODEL
+
+
+def get_client():
     """
-    Create a Gemini client using the API key from the environment.
-
-    Returns:
-        A configured genai.Client.
+    Create a client for the configured provider, using the right API key.
 
     Raises:
-        RuntimeError: if LLM_API_KEY is missing or still the placeholder.
+        RuntimeError: if the relevant API key is missing or still a placeholder.
     """
-    api_key = os.environ.get("LLM_API_KEY")
+    if PROVIDER == "openai":
+        from openai import OpenAI
+        key = os.environ.get("OPENAI_API_KEY") or os.environ.get("LLM_API_KEY")
+        if not key or key.startswith("your_"):
+            raise RuntimeError(
+                "OPENAI_API_KEY is not set. Add it to .env and set "
+                "LLM_PROVIDER=openai. Get a key at https://platform.openai.com/api-keys"
+            )
+        return OpenAI(api_key=key)
 
-    # Guard against the common "forgot to set the key" mistake, with a helpful
-    # message pointing at where to get one.
-    if not api_key or api_key == "your_key_here":
+    # Default: Gemini.
+    from google import genai
+    key = os.environ.get("GEMINI_API_KEY") or os.environ.get("LLM_API_KEY")
+    if not key or key.startswith("your_"):
         raise RuntimeError(
-            "LLM_API_KEY is not set. Copy .env.example to .env and paste your "
-            "Gemini API key from https://aistudio.google.com/apikey"
+            "GEMINI_API_KEY is not set. Add it to .env (or keep LLM_API_KEY) and "
+            "set LLM_PROVIDER=gemini. Get a key at https://aistudio.google.com/apikey"
         )
+    return genai.Client(api_key=key)
 
-    return genai.Client(api_key=api_key)
 
-
-def generate_json(client: genai.Client, prompt: str, schema, model: str = DEFAULT_MODEL):
-    """
-    Ask Gemini to respond with structured output matching a Pydantic schema.
-
-    Forcing a schema is what makes our classification reliable: instead of
-    hoping the model returns clean text, we get a typed object every time.
-
-    Args:
-        client: A genai.Client from get_client().
-        prompt: The instruction/text to send to the model.
-        schema: A Pydantic model class describing the desired output shape.
-        model:  Which Gemini model to use.
-
-    Returns:
-        An instance of `schema` populated by the model.
-    """
+def _gemini_generate(client, prompt: str, schema, model: str):
+    """Structured generation via Gemini. Handles plain and list[...] schemas."""
+    from google.genai import types
     response = client.models.generate_content(
         model=model,
         contents=prompt,
@@ -78,9 +83,56 @@ def generate_json(client: genai.Client, prompt: str, schema, model: str = DEFAUL
             response_schema=schema,
         ),
     )
-
-    # When response_schema is a Pydantic model, the SDK parses the JSON for us.
     return response.parsed
+
+
+def _openai_generate(client, prompt: str, schema, model: str):
+    """
+    Structured generation via OpenAI.
+
+    OpenAI's parse API needs a Pydantic model as the response_format, and does
+    not accept a bare list[...] type. So when the caller asks for a list, we wrap
+    it in a small container model, then unwrap the result.
+    """
+    origin = typing.get_origin(schema)
+
+    if origin in (list,):
+        item_type = typing.get_args(schema)[0]
+        # Build a one-off container: { "items": [ ... ] }
+        container = create_model("ItemList", items=(list[item_type], ...))
+        completion = client.chat.completions.parse(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            response_format=container,
+        )
+        return completion.choices[0].message.parsed.items
+
+    # Plain (non-list) schema: pass it straight through.
+    completion = client.chat.completions.parse(
+        model=model,
+        messages=[{"role": "user", "content": prompt}],
+        response_format=schema,
+    )
+    return completion.choices[0].message.parsed
+
+
+def generate_json(client, prompt: str, schema, model: str = None):
+    """
+    Ask the configured provider for structured output matching a Pydantic schema.
+
+    Args:
+        client: A client from get_client().
+        prompt: The instruction/text to send.
+        schema: A Pydantic model class, or list[SomeModel].
+        model:  Optional model override; defaults to the provider's default.
+
+    Returns:
+        An instance of `schema` (or a list of them) populated by the model.
+    """
+    model = model or _default_model()
+    if PROVIDER == "openai":
+        return _openai_generate(client, prompt, schema, model)
+    return _gemini_generate(client, prompt, schema, model)
 
 
 # ----------------------------------------------------------------------------
@@ -106,7 +158,8 @@ def _selftest():
 
     result = generate_json(client, prompt, _ReviewLabel)
 
-    print("Gemini structured output works.")
+    print(f"Provider: {PROVIDER}  |  Model: {_default_model()}")
+    print("Structured output works.")
     print(f"  sentiment = {result.sentiment}")
     print(f"  category  = {result.category}")
 
