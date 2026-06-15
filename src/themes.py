@@ -23,6 +23,8 @@ import math
 import os
 import time
 
+from typing import Literal
+
 from pydantic import BaseModel
 
 # Reuse our client/helper, the category type, and the batching settings.
@@ -50,6 +52,9 @@ class ThemeDef(BaseModel):
     name: str               # short, specific, e.g. "blatant cheaters in Premier"
     description: str         # one-line explanation
     category: ReviewCategory
+    # "feature": a specific, actionable aspect devs could act on.
+    # "emotional": general sentiment / mood / nostalgia, nothing to act on.
+    kind: Literal["feature", "emotional"]
 
 
 class ThemeAssignment(BaseModel):
@@ -98,7 +103,11 @@ def discover_themes(client, reviews: list) -> list:
         "category. For example, prefer 'blatant cheaters in Premier mode' over "
         "just 'cheating'.\n\n"
         "For each theme give a short name (3-6 words), a one-line description, "
-        "and the category it belongs to.\n\n"
+        "the category it belongs to, and a 'kind': use \"feature\" if the theme "
+        "is about a specific, actionable aspect of the game (a system, mechanic, "
+        "feature, bug, or piece of content) that the developers could act on, or "
+        "\"emotional\" if it is general sentiment, mood, nostalgia, or a "
+        "farewell with nothing specific to act on.\n\n"
         f"Reviews:\n{reviews_block}"
     )
 
@@ -227,7 +236,7 @@ def aggregate_themes(reviews: list, themes: list) -> list:
         A list of theme dicts sorted by impact score (highest first).
     """
     # Description/category lookup from the discovered themes.
-    meta = {t.name: {"description": t.description, "category": t.category} for t in themes}
+    meta = {t.name: {"description": t.description, "category": t.category, "kind": t.kind} for t in themes}
 
     # Bucket reviews by their assigned theme.
     buckets = {}
@@ -254,11 +263,12 @@ def aggregate_themes(reviews: list, themes: list) -> list:
         # Impact score: the summed weight of every review under this theme.
         impact = round(sum(review_impact(r) for r in items), 1)
 
-        info = meta.get(theme_name, {"description": "", "category": "other"})
+        info = meta.get(theme_name, {"description": "", "category": "other", "kind": "feature"})
         records.append({
             "theme": theme_name,
             "category": info["category"],
             "description": info["description"],
+            "kind": info.get("kind", "feature"),
             "count": len(items),
             "impact_score": impact,
             "sentiment_counts": _count_sentiments(items),

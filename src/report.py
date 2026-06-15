@@ -180,10 +180,24 @@ def build_html(themes: list, title: str, mode: str = "negative") -> str:
     total_reviews = sum(t["count"] for t in themes)
     max_impact = max((t.get("impact_score", 0) for t in real_themes), default=1) or 1
 
-    # Build the ranked cards (already ordered by impact from the themes step).
-    cards = "".join(
-        render_theme_card(i + 1, t, max_impact) for i, t in enumerate(real_themes)
-    )
+    # Build the theme section(s). In positive mode we split actionable feature
+    # praise (Double Down) from non-actionable emotional sentiment.
+    def _section(heading, items):
+        body = "".join(
+            render_theme_card(i + 1, t, max_impact) for i, t in enumerate(items)
+        )
+        return f"<h2>{esc(heading)}</h2>{body}"
+
+    if mode == "positive":
+        features = [t for t in real_themes if t.get("kind", "feature") != "emotional"]
+        emotional = [t for t in real_themes if t.get("kind") == "emotional"]
+        sections_html = _section(section_heading, features)
+        if emotional:
+            sections_html += _section(
+                "Player sentiment - emotional, not directly actionable", emotional
+            )
+    else:
+        sections_html = _section(section_heading, real_themes)
 
     # A muted note for the low-signal pile, shown honestly rather than hidden.
     low_signal_parts = []
@@ -262,8 +276,7 @@ def build_html(themes: list, title: str, mode: str = "negative") -> str:
   <main>
     <h2>Overview</h2>
     {overview_html}
-    <h2>{esc(section_heading)}</h2>
-    {cards}
+    {sections_html}
     <h2>Low-signal reviews</h2>
     {unclear_html}
   </main>
