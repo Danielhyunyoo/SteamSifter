@@ -3,3 +3,5 @@
 
 requests==2.32.3       # HTTP calls to the Steam reviews API
 python-dotenv==1.0.1   # Load the API key from a local .env file
+google-genai==2.8.0    # Google Gemini SDK (AI classification)
+pydantic==2.13.4       # Schemas for structured AI output
