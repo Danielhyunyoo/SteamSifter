@@ -17,6 +17,9 @@ data/*.json
 data/*.csv
 !data/.gitkeep
 
+# --- Generated reports (built from data, not committed) ---
+steamsifter_report.html
+
 # --- Editor / OS noise ---
 .vscode/
 .vs/

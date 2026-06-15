@@ -21,8 +21,10 @@ from google.genai import types
 from pydantic import BaseModel
 
 
-# The Gemini model we use. "flash" is fast and free-tier friendly.
-DEFAULT_MODEL = "gemini-2.5-flash"
+# The Gemini model we use. "flash-lite" is the lightest model and has the most
+# generous free-tier daily quota, which matters because we make many calls.
+# (Quotas are per-model, so each model has its own separate daily allowance.)
+DEFAULT_MODEL = "gemini-2.5-flash-lite"
 
 # Load variables from a local .env file into the environment.
 # This is a no-op if .env does not exist.

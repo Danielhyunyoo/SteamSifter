@@ -30,8 +30,9 @@ from classify import ReviewCategory
 # Tuning knobs
 # ----------------------------------------------------------------------------
 
-BATCH_SIZE = 20                 # reviews sent per API call
-DELAY_BETWEEN_BATCHES = 4.0     # seconds to wait between calls (rate-limit safety)
+BATCH_SIZE = 50                 # reviews sent per API call (bigger = fewer calls,
+                                # which matters a lot given low free-tier daily quotas)
+DELAY_BETWEEN_BATCHES = 4.5     # seconds to wait between calls (stay under ~15 RPM)
 MAX_REVIEW_CHARS = 500          # truncate very long reviews to control token use
 MAX_RETRIES = 3                 # retries when a batch call fails (e.g. throttled)
 

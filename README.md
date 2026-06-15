@@ -32,7 +32,7 @@ SteamSifter will enter a game's app ID, pulls its reviews automatically, filters
 
 ## Roadmap
 
-- [ ] **Minimum Viable Product:** one game, a few hundred recent negative reviews; classify, theme, and rank by frequency; basic list view
+- [x] **Minimum Viable Product:** one game, a few hundred recent negative reviews; classify, theme, and rank by frequency; basic list view
 - [ ] **V2:** behavioral impact weighting (playtime + helpful-votes), noise filter, representative quotes, sentiment charts, positive "Double Down" view
 - [ ] **V3:** scale to thousands of reviews via batching and embeddings clustering, app ID search, exportable reports, filters, public deployment
 
