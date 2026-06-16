@@ -34,7 +34,9 @@ SteamSifter will enter a game's app ID, pulls its reviews automatically, filters
 
 - [x] **Minimum Viable Product:** one game, a few hundred recent negative reviews; classify, theme, and rank by frequency; basic list view
 - [x] **V2:** behavioral impact weighting (playtime + helpful-votes), noise filter, representative quotes, sentiment charts, positive "Double Down" view
-- [ ] **V3:** scale to thousands of reviews via batching and embeddings clustering, app ID search, exportable reports, filters, public deployment
+- [x] **V3:** web app with game-name search, one-pass analysis with a Fix These / Double Down toggle, live progress bar, per-game caching, and a Steam-styled UI
+- [ ] **V4:** UI animations (overview + review bars, toggle slider); home-page links (GitHub, About, Steam, LinkedIn) with a clear Valve/Steam non-affiliation notice; clickable source links on every shown review
+- [ ] **Later:** scale to thousands of reviews via embeddings clustering, exportable reports, filters, and public deployment
 
 ## Current Limitations
 
