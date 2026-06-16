@@ -58,62 +58,72 @@ def cache_age_days(path: str) -> float:
     return (time.time() - os.path.getmtime(path)) / 86400
 
 
-def run(app_id: str, review_type: str = "negative", mode: str = None,
-        title: str = None, max_reviews: int = 300, refresh: bool = False,
-        max_age_days: float = DEFAULT_MAX_AGE_DAYS, out: str = "steamsifter_report.html") -> str:
+def get_records(app_id: str, review_type: str = "negative", max_reviews: int = 300,
+                refresh: bool = False, max_age_days: float = DEFAULT_MAX_AGE_DAYS) -> list:
     """
-    Run (or reuse a cached) analysis for one game, then write the HTML report.
-
-    Returns the path of the report that was written.
+    Return the theme records for a game: from cache if fresh and readable,
+    otherwise by running the full analysis (fetch -> classify -> theme) and
+    caching the result. This is the reusable core the web app calls.
     """
     paths = cache_paths(app_id, review_type)
-    mode = mode or ("positive" if review_type == "positive" else "negative")
-    title = title or f"App {app_id}"
 
     # ---- Cache check: reuse the themes result if it is fresh AND readable ----
-    records = None
     if not refresh and is_fresh(paths["themes"], max_age_days):
         try:
             with open(paths["themes"], encoding="utf-8") as f:
                 records = json.load(f)
             print(f"Cache HIT for app {app_id} ({review_type}). Reusing analysis "
                   f"from {cache_age_days(paths['themes']):.1f} day(s) ago. No API calls needed.")
+            return records
         except (json.JSONDecodeError, OSError) as err:
             print(f"Cached analysis was unreadable ({err}); re-analyzing.")
-            records = None
 
-    # ---- Rebuild if there was no usable cache ----
-    if records is None:
-        reason = "refresh requested" if refresh else "no fresh/usable cache"
-        print(f"Cache MISS for app {app_id} ({review_type}): {reason}. Running analysis...")
-        client = get_client()
+    # ---- Rebuild ----
+    reason = "refresh requested" if refresh else "no fresh/usable cache"
+    print(f"Cache MISS for app {app_id} ({review_type}): {reason}. Running analysis...")
+    client = get_client()
 
-        # Step 1: fetch reviews (reuse the saved file unless refreshing).
-        if refresh or not os.path.exists(paths["reviews"]):
-            print(f"Fetching up to {max_reviews} '{review_type}' reviews...")
-            reviews = fetch_reviews(app_id, max_reviews=max_reviews, review_type=review_type)
-            save_reviews(reviews, app_id, review_type)
-        else:
-            print(f"Reusing fetched reviews from {paths['reviews']}")
-            with open(paths["reviews"], encoding="utf-8") as f:
-                reviews = json.load(f)
+    # Step 1: fetch reviews (reuse the saved file unless refreshing).
+    if refresh or not os.path.exists(paths["reviews"]):
+        print(f"Fetching up to {max_reviews} '{review_type}' reviews...")
+        reviews = fetch_reviews(app_id, max_reviews=max_reviews, review_type=review_type)
+        save_reviews(reviews, app_id, review_type)
+    else:
+        print(f"Reusing fetched reviews from {paths['reviews']}")
+        with open(paths["reviews"], encoding="utf-8") as f:
+            reviews = json.load(f)
 
-        # Step 2: classify (sentiment, category, is_constructive).
-        print("Classifying reviews...")
-        classified = classify_all(client, reviews)
-        save_classified(classified, paths["reviews"])
+    # Step 2: classify (sentiment, category, is_constructive).
+    print("Classifying reviews...")
+    classified = classify_all(client, reviews)
+    save_classified(classified, paths["reviews"])
 
-        # Step 3: theme + rank.
-        print("Discovering and assigning themes...")
-        records, n_constructive, n_noise, themes = analyze_reviews(client, classified)
-        print(f"  Constructive: {n_constructive}  |  Noise: {n_noise}  |  Themes: {len(themes)}")
+    # Step 3: theme + rank.
+    print("Discovering and assigning themes...")
+    records, n_constructive, n_noise, themes = analyze_reviews(client, classified)
+    print(f"  Constructive: {n_constructive}  |  Noise: {n_noise}  |  Themes: {len(themes)}")
 
-        # Save the themes result (this IS the cache for next time).
-        os.makedirs(DATA_DIR, exist_ok=True)
-        with open(paths["themes"], "w", encoding="utf-8") as f:
-            json.dump(records, f, ensure_ascii=False, indent=2)
+    # Save the themes result (this IS the cache for next time).
+    os.makedirs(DATA_DIR, exist_ok=True)
+    with open(paths["themes"], "w", encoding="utf-8") as f:
+        json.dump(records, f, ensure_ascii=False, indent=2)
 
-    # ---- Report (always free, no API) ----
+    return records
+
+
+def run(app_id: str, review_type: str = "negative", mode: str = None,
+        title: str = None, max_reviews: int = 300, refresh: bool = False,
+        max_age_days: float = DEFAULT_MAX_AGE_DAYS, out: str = "steamsifter_report.html") -> str:
+    """
+    Run (or reuse a cached) analysis for one game, then write the HTML report.
+    Returns the path of the report that was written.
+    """
+    mode = mode or ("positive" if review_type == "positive" else "negative")
+    title = title or f"App {app_id}"
+
+    records = get_records(app_id, review_type, max_reviews=max_reviews,
+                          refresh=refresh, max_age_days=max_age_days)
+
     html_doc = build_html(records, title, mode)
     with open(out, "w", encoding="utf-8") as f:
         f.write(html_doc)

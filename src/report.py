@@ -50,6 +50,47 @@ UNCLEAR_LABEL = "unclear"
 NOISE_LABEL = "noise"
 
 
+# The report header's live search script. Kept as a plain string (NOT an
+# f-string) so its JavaScript braces don't need escaping. It uses the global
+# NAV_MODE injected per-report, calls /api/search, and navigates to /analyze.
+NAV_SEARCH_JS = """
+<script>
+(function () {
+  const input = document.getElementById('navq');
+  const box = document.getElementById('navresults');
+  if (!input) return;
+  let timer = null;
+  input.addEventListener('input', function () {
+    clearTimeout(timer);
+    const q = input.value.trim();
+    if (!q) { box.style.display = 'none'; return; }
+    timer = setTimeout(function () { suggest(q); }, 250);
+  });
+  async function suggest(q) {
+    try {
+      const r = await fetch('/api/search?q=' + encodeURIComponent(q));
+      const games = await r.json();
+      if (!games.length) { box.style.display = 'none'; return; }
+      box.innerHTML = '';
+      games.forEach(function (g) {
+        const row = document.createElement('div');
+        row.className = 'navresult';
+        row.innerHTML = (g.image ? '<img src="' + g.image + '">' : '<img>') +
+                        '<span>' + g.name + '</span>';
+        row.onclick = function () {
+          window.location = '/analyze?appid=' + g.appid +
+            '&type=' + NAV_MODE + '&title=' + encodeURIComponent(g.name);
+        };
+        box.appendChild(row);
+      });
+      box.style.display = 'block';
+    } catch (e) { box.style.display = 'none'; }
+  }
+})();
+</script>
+"""
+
+
 def esc(text) -> str:
     """Escape text so review content can't break the HTML."""
     return html.escape(str(text))
@@ -221,6 +262,25 @@ def build_html(themes: list, title: str, mode: str = "negative") -> str:
 
     overview_html = render_overview(themes)
 
+    # Header markup (plain strings, so no f-string brace escaping needed).
+    header_html = (
+        '<header>'
+        '<a class="brand" href="/">SteamSifter</a>'
+        '<div class="titlerow">'
+        '<div class="titleblock">'
+        f'<h1>{esc(title)}</h1>'
+        f'<div class="meta">{esc(subtitle)} &middot; {total_reviews} reviews &middot; '
+        f'Generated {generated}</div>'
+        '</div>'
+        '<div class="navsearch">'
+        '<input id="navq" type="text" placeholder="Analyze another game..." autocomplete="off">'
+        '<div id="navresults" class="navresults" style="display:none"></div>'
+        '</div>'
+        '</div>'
+        '</header>'
+    )
+    nav_js = f'<script>const NAV_MODE = "{mode}";</script>' + NAV_SEARCH_JS
+
     # The CSS lives inline so the report is a single portable file. Note that
     # every literal CSS brace is doubled ({{ }}) because this is an f-string.
     return f"""<!DOCTYPE html>
@@ -265,14 +325,20 @@ def build_html(themes: list, title: str, mode: str = "negative") -> str:
   .cat-track {{ flex: 1; background: #eef0f3; border-radius: 5px; height: 8px; overflow: hidden; }}
   .cat-fill {{ display: block; height: 100%; border-radius: 5px; }}
   .cat-num {{ width: 34px; text-align: right; color: #6b7280; font-weight: 600; }}
+  .titlerow {{ display: flex; align-items: center; justify-content: space-between; gap: 16px; }}
+  header a.brand {{ text-decoration: none; display: inline-block; margin-bottom: 12px; }}
+  header a.brand:hover {{ color: #8fd0fb; }}
+  .navsearch {{ position: relative; flex: 1; max-width: 320px; }}
+  .navsearch input {{ width: 100%; padding: 8px 12px; border-radius: 6px; border: 1px solid #2a475e; background: #16202d; color: #fff; font-size: 13px; }}
+  .navresults {{ position: absolute; left: 0; right: 0; top: 38px; background: #16202d; border: 1px solid #2a475e; border-radius: 6px; overflow: hidden; z-index: 5; }}
+  .navresult {{ display: flex; align-items: center; gap: 10px; padding: 8px 10px; cursor: pointer; }}
+  .navresult:hover {{ background: #1f3346; }}
+  .navresult img {{ width: 46px; height: 18px; object-fit: cover; border-radius: 2px; background: #0e1620; }}
+  .navresult span {{ font-size: 13px; color: #c7d5e0; }}
 </style>
 </head>
 <body>
-  <header>
-    <div class="brand">SteamSifter</div>
-    <h1>{esc(title)}</h1>
-    <div class="meta">{esc(subtitle)} &middot; {total_reviews} reviews &middot; Generated {generated}</div>
-  </header>
+  {header_html}
   <main>
     <h2>Overview</h2>
     {overview_html}
@@ -280,6 +346,7 @@ def build_html(themes: list, title: str, mode: str = "negative") -> str:
     <h2>Low-signal reviews</h2>
     {unclear_html}
   </main>
+  {nav_js}
 </body>
 </html>"""
 
