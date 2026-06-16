@@ -1,18 +1,14 @@
 """
 report.py
 
-Turns a themes file into a clean, standalone HTML report.
+Turns a combined analysis (negative + positive themes) into one standalone HTML
+report. The page defaults to the "Fix These" (negative) view and offers a toggle
+to the "Double Down" (positive) view, with no re-running: both are precomputed.
 
-In "negative" mode it produces a "Fix These" dashboard of problems to address.
-In "positive" mode it produces a "Double Down" dashboard of strengths to lean
-into. This is the first visual view of the pipeline and a preview of the
-eventual web app.
-
-It uses no API calls, just the saved themes JSON, so it is free to run anytime.
+It uses no API calls, just the saved analysis JSON, so it is free to run anytime.
 
 Run:
-    python src/report.py
-    python src/report.py data/themes_reviews_1085660_positive.json --title "Destiny 2" --mode positive
+    python src/report.py data/analysis_730.json --title "Counter-Strike 2"
 """
 
 import argparse
@@ -37,22 +33,13 @@ CATEGORY_COLORS = {
 }
 
 # Colors for the sentiment overview bar.
-SENTIMENT_COLORS = {
-    "positive": "#98c379",
-    "negative": "#e06c75",
-    "neutral": "#abb2bf",
-}
+SENTIMENT_COLORS = {"positive": "#98c379", "negative": "#e06c75", "neutral": "#abb2bf"}
 
-# The label used for constructive reviews that matched no theme.
-UNCLEAR_LABEL = "unclear"
-
-# The label used for reviews filtered out as noise before theming.
-NOISE_LABEL = "noise"
+UNCLEAR_LABEL = "unclear"   # constructive reviews that matched no theme
+NOISE_LABEL = "noise"       # reviews filtered out as low-signal
 
 
-# The report header's live search script. Kept as a plain string (NOT an
-# f-string) so its JavaScript braces don't need escaping. It uses the global
-# NAV_MODE injected per-report, calls /api/search, and navigates to /analyze.
+# Header live-search script (plain string so its JS braces need no escaping).
 NAV_SEARCH_JS = """
 <script>
 (function () {
@@ -79,7 +66,7 @@ NAV_SEARCH_JS = """
                         '<span>' + g.name + '</span>';
         row.onclick = function () {
           window.location = '/analyze?appid=' + g.appid +
-            '&type=' + NAV_MODE + '&title=' + encodeURIComponent(g.name);
+            '&title=' + encodeURIComponent(g.name);
         };
         box.appendChild(row);
       });
@@ -87,6 +74,18 @@ NAV_SEARCH_JS = """
     } catch (e) { box.style.display = 'none'; }
   }
 })();
+</script>
+"""
+
+# Toggle between the Fix These / Double Down views (plain string).
+TOGGLE_JS = """
+<script>
+function showSide(which) {
+  document.getElementById('side-fix').style.display = (which === 'fix') ? 'block' : 'none';
+  document.getElementById('side-love').style.display = (which === 'love') ? 'block' : 'none';
+  document.getElementById('btn-fix').classList.toggle('active', which === 'fix');
+  document.getElementById('btn-love').classList.toggle('active', which === 'love');
+}
 </script>
 """
 
@@ -120,60 +119,83 @@ def render_theme_card(rank: int, theme: dict, max_impact: float) -> str:
     count = theme["count"]
     impact = theme.get("impact_score", 0)
     description = esc(theme.get("description", ""))
-
-    # Bar width reflects IMPACT (playtime- and helpful-weighted), not raw count.
     width = int((impact / max_impact) * 100) if max_impact else 0
-
     examples_html = "".join(render_example(e) for e in theme.get("examples", []))
+    return (
+        '<div class="card">'
+        '<div class="card-head">'
+        f'<span class="rank">#{rank}</span>'
+        f'<span class="theme-name">{name}</span>'
+        f'<span class="pill" style="background:{color}">{esc(category)}</span>'
+        f'<span class="count">{count} reviews &middot; impact {impact:g}</span>'
+        '</div>'
+        f'<div class="bar-track"><div class="bar-fill" style="width:{width}%;background:{color}"></div></div>'
+        f'<p class="description">{description}</p>'
+        f'<div class="examples">{examples_html}</div>'
+        '</div>'
+    )
 
-    return f"""
-    <div class="card">
-      <div class="card-head">
-        <span class="rank">#{rank}</span>
-        <span class="theme-name">{name}</span>
-        <span class="pill" style="background:{color}">{esc(category)}</span>
-        <span class="count">{count} reviews &middot; impact {impact:g}</span>
-      </div>
-      <div class="bar-track"><div class="bar-fill" style="width:{width}%;background:{color}"></div></div>
-      <p class="description">{description}</p>
-      <div class="examples">{examples_html}</div>
-    </div>
-    """
+
+def _section(heading: str, items: list, max_impact: float) -> str:
+    """A heading plus its ranked theme cards."""
+    body = "".join(render_theme_card(i + 1, t, max_impact) for i, t in enumerate(items))
+    return f"<h2>{esc(heading)}</h2>{body}"
 
 
-def render_overview(records: list) -> str:
+def render_side(records: list, mode: str) -> str:
     """
-    Build the at-a-glance overview: an overall sentiment bar and a category
-    distribution. Reads the per-theme sentiment_counts saved by the themes step.
+    Render one polarity's content: ranked theme sections plus a per-side note for
+    constructive reviews that matched no theme.
     """
-    # Sentiment totals across every record (themes + unclear + noise).
+    real = [t for t in records if t["theme"] not in (UNCLEAR_LABEL, NOISE_LABEL)]
+    unclear = next((t for t in records if t["theme"] == UNCLEAR_LABEL), None)
+    max_impact = max((t.get("impact_score", 0) for t in real), default=1) or 1
+
+    if not real:
+        html_out = '<p class="empty">Not enough reviews on this side to surface themes.</p>'
+    elif mode == "positive":
+        features = [t for t in real if t.get("kind", "feature") != "emotional"]
+        emotional = [t for t in real if t.get("kind") == "emotional"]
+        html_out = _section("Double Down - ranked by impact (playtime + helpful votes)",
+                            features, max_impact)
+        if emotional:
+            html_out += _section("Player sentiment - emotional, not directly actionable",
+                                 emotional, max_impact)
+    else:
+        html_out = _section("Fix These - ranked by impact (playtime + helpful votes)",
+                            real, max_impact)
+
+    if unclear and unclear.get("count"):
+        total_side = sum(t["count"] for t in records) or 1
+        pct = round(unclear["count"] / total_side * 100)
+        html_out += (f'<div class="unclear">{unclear["count"]} reviews ({pct}%) were '
+                     "constructive but did not match a specific theme.</div>")
+    return html_out
+
+
+def render_overview(neg: list, pos: list, sentiment_totals: dict, total_reviews: int) -> str:
+    """Overall sentiment bar + category distribution (across both sides)."""
     sent = {"positive": 0, "negative": 0, "neutral": 0}
-    for r in records:
-        for key, val in (r.get("sentiment_counts") or {}).items():
-            sent[key] = sent.get(key, 0) + val
+    for k, v in (sentiment_totals or {}).items():
+        sent[k] = sent.get(k, 0) + v
     sent_total = sum(sent.values())
 
-    # Category totals over meaningful feedback (everything except the noise bucket).
     cats = {}
-    for r in records:
-        if r["theme"] == NOISE_LABEL:
+    for rec in list(neg) + list(pos):
+        if rec["theme"] in (NOISE_LABEL, UNCLEAR_LABEL):
             continue
-        cats[r["category"]] = cats.get(r["category"], 0) + r["count"]
+        cats[rec["category"]] = cats.get(rec["category"], 0) + rec["count"]
     cat_total = sum(cats.values()) or 1
 
-    # Stacked sentiment bar + legend.
     segments, legend = "", ""
     for key in ("positive", "negative", "neutral"):
         val = sent.get(key, 0)
         pct = (val / sent_total * 100) if sent_total else 0
         if val:
             segments += f'<div class="seg" style="width:{pct:.1f}%;background:{SENTIMENT_COLORS[key]}"></div>'
-        legend += (
-            f'<span class="legend-item"><span class="dot" style="background:{SENTIMENT_COLORS[key]}"></span>'
-            f'{key} {val}</span>'
-        )
+        legend += (f'<span class="legend-item"><span class="dot" '
+                   f'style="background:{SENTIMENT_COLORS[key]}"></span>{key} {val}</span>')
 
-    # Category bars, most common first.
     cat_rows = ""
     for category, c in sorted(cats.items(), key=lambda kv: kv[1], reverse=True):
         pct = c / cat_total * 100
@@ -197,79 +219,34 @@ def render_overview(records: list) -> str:
     )
 
 
-def build_html(themes: list, title: str, mode: str = "negative") -> str:
-    """
-    Assemble the full HTML document from the theme records.
-
-    mode controls the framing:
-      - "negative": a "Fix These" dashboard of problems to address.
-      - "positive": a "Double Down" dashboard of strengths to lean into.
-    """
-    # Choose the wording based on whether we're showing praise or complaints.
-    if mode == "positive":
-        subtitle = "Positive review analysis"
-        section_heading = "Double Down - ranked by impact (playtime + helpful votes)"
-    else:
-        subtitle = "Negative review analysis"
-        section_heading = "Fix These - ranked by impact (playtime + helpful votes)"
-
-    # Separate real themes from the noise/unclear bucket.
-    real_themes = [t for t in themes if t["theme"] not in (UNCLEAR_LABEL, NOISE_LABEL)]
-    unclear = next((t for t in themes if t["theme"] == UNCLEAR_LABEL), None)
-    noise = next((t for t in themes if t["theme"] == NOISE_LABEL), None)
-
-    total_reviews = sum(t["count"] for t in themes)
-    max_impact = max((t.get("impact_score", 0) for t in real_themes), default=1) or 1
-
-    # Build the theme section(s). In positive mode we split actionable feature
-    # praise (Double Down) from non-actionable emotional sentiment.
-    def _section(heading, items):
-        body = "".join(
-            render_theme_card(i + 1, t, max_impact) for i, t in enumerate(items)
-        )
-        return f"<h2>{esc(heading)}</h2>{body}"
-
-    if mode == "positive":
-        features = [t for t in real_themes if t.get("kind", "feature") != "emotional"]
-        emotional = [t for t in real_themes if t.get("kind") == "emotional"]
-        sections_html = _section(section_heading, features)
-        if emotional:
-            sections_html += _section(
-                "Player sentiment - emotional, not directly actionable", emotional
-            )
-    else:
-        sections_html = _section(section_heading, real_themes)
-
-    # A muted note for the low-signal pile, shown honestly rather than hidden.
-    low_signal_parts = []
-    if noise:
-        npct = round((noise["count"] / total_reviews) * 100) if total_reviews else 0
-        low_signal_parts.append(
-            f"<strong>{noise['count']} reviews ({npct}%)</strong> were filtered out "
-            "as noise (jokes, one-liners, off-topic rants, and spam) before theming."
-        )
-    if unclear:
-        upct = round((unclear["count"] / total_reviews) * 100) if total_reviews else 0
-        low_signal_parts.append(
-            f"<strong>{unclear['count']} reviews ({upct}%)</strong> were constructive "
-            "but did not match a specific theme."
-        )
-    unclear_html = ""
-    if low_signal_parts:
-        unclear_html = '<div class="unclear">' + " ".join(low_signal_parts) + "</div>"
-
+def build_html(analysis: dict, title: str) -> str:
+    """Assemble the full report from a combined analysis dict (see analyze_both)."""
+    neg = analysis.get("negative", [])
+    pos = analysis.get("positive", [])
+    noise = analysis.get("noise", {}) or {}
+    sentiment_totals = analysis.get("sentiment_totals", {})
+    total_reviews = analysis.get("total_reviews", 0)
     generated = date.today().strftime("%B %d, %Y")
 
-    overview_html = render_overview(themes)
+    overview_html = render_overview(neg, pos, sentiment_totals, total_reviews)
+    fix_html = render_side(neg, "negative")
+    love_html = render_side(pos, "positive")
 
-    # Header markup (plain strings, so no f-string brace escaping needed).
+    noise_html = ""
+    if noise.get("count"):
+        pct = round(noise["count"] / total_reviews * 100) if total_reviews else 0
+        noise_html = (f'<div class="unclear">{noise["count"]} reviews ({pct}%) were filtered '
+                      "out as noise (jokes, one-liners, off-topic rants, and spam) before "
+                      "theming.</div>")
+
+    # Header markup (plain strings, brace-safe).
     header_html = (
         '<header>'
         '<a class="brand" href="/">SteamSifter</a>'
         '<div class="titlerow">'
         '<div class="titleblock">'
         f'<h1>{esc(title)}</h1>'
-        f'<div class="meta">{esc(subtitle)} &middot; {total_reviews} reviews &middot; '
+        f'<div class="meta">Review analysis &middot; {total_reviews} reviews &middot; '
         f'Generated {generated}</div>'
         '</div>'
         '<div class="navsearch">'
@@ -279,10 +256,10 @@ def build_html(themes: list, title: str, mode: str = "negative") -> str:
         '</div>'
         '</header>'
     )
-    nav_js = f'<script>const NAV_MODE = "{mode}";</script>' + NAV_SEARCH_JS
 
-    # The CSS lives inline so the report is a single portable file. Note that
-    # every literal CSS brace is doubled ({{ }}) because this is an f-string.
+    nav_search = NAV_SEARCH_JS
+    toggle_js = TOGGLE_JS
+
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -292,12 +269,24 @@ def build_html(themes: list, title: str, mode: str = "negative") -> str:
 <style>
   * {{ box-sizing: border-box; }}
   body {{ font-family: -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; background: #f4f5f7; color: #1c1e21; }}
-  header {{ background: #171a21; color: #fff; padding: 28px 32px; }}
-  header .brand {{ font-size: 14px; letter-spacing: 2px; color: #66c0f4; text-transform: uppercase; }}
-  header h1 {{ margin: 6px 0 4px; font-size: 26px; }}
+  header {{ background: #171a21; color: #fff; padding: 24px 32px; }}
+  header a.brand {{ font-size: 14px; letter-spacing: 2px; color: #66c0f4; text-transform: uppercase; text-decoration: none; display: inline-block; margin-bottom: 12px; }}
+  header a.brand:hover {{ color: #8fd0fb; }}
+  .titlerow {{ display: flex; align-items: center; justify-content: space-between; gap: 16px; }}
+  header h1 {{ margin: 0 0 4px; font-size: 26px; }}
   header .meta {{ color: #9aa4b2; font-size: 14px; }}
+  .navsearch {{ position: relative; flex: 1; max-width: 320px; }}
+  .navsearch input {{ width: 100%; padding: 8px 12px; border-radius: 6px; border: 1px solid #2a475e; background: #16202d; color: #fff; font-size: 13px; }}
+  .navresults {{ position: absolute; left: 0; right: 0; top: 38px; background: #16202d; border: 1px solid #2a475e; border-radius: 6px; overflow: hidden; z-index: 5; }}
+  .navresult {{ display: flex; align-items: center; gap: 10px; padding: 8px 10px; cursor: pointer; }}
+  .navresult:hover {{ background: #1f3346; }}
+  .navresult img {{ width: 46px; height: 18px; object-fit: cover; border-radius: 2px; background: #0e1620; }}
+  .navresult span {{ font-size: 13px; color: #c7d5e0; }}
   main {{ max-width: 880px; margin: 0 auto; padding: 28px 20px 60px; }}
   h2 {{ font-size: 18px; margin: 24px 0 12px; }}
+  .toggle-bar {{ display: inline-flex; background: #e3e6ea; border-radius: 8px; padding: 4px; margin: 8px 0 4px; }}
+  .toggle-btn {{ border: 0; background: transparent; padding: 8px 18px; border-radius: 6px; font-size: 14px; font-weight: 600; color: #5b6470; cursor: pointer; }}
+  .toggle-btn.active {{ background: #fff; color: #1c1e21; box-shadow: 0 1px 2px rgba(0,0,0,.1); }}
   .card {{ background: #fff; border: 1px solid #e3e6ea; border-radius: 10px; padding: 18px 20px; margin-bottom: 14px; box-shadow: 0 1px 2px rgba(0,0,0,.04); }}
   .card-head {{ display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }}
   .rank {{ font-weight: 700; color: #8a929e; font-size: 14px; }}
@@ -311,8 +300,9 @@ def build_html(themes: list, title: str, mode: str = "negative") -> str:
   .quote {{ font-style: italic; color: #2c3038; font-size: 13px; }}
   .badges {{ display: block; margin-top: 4px; }}
   .badge {{ display: inline-block; font-size: 11px; background: #eef0f3; color: #5b6470; border-radius: 4px; padding: 1px 7px; margin-right: 6px; }}
-  .unclear {{ background: #fff8e6; border: 1px solid #f0e2b8; border-radius: 10px; padding: 16px 18px; font-size: 14px; color: #5c531f; }}
-  .overview {{ background: #fff; border: 1px solid #e3e6ea; border-radius: 10px; padding: 18px 20px; margin-bottom: 18px; }}
+  .unclear {{ background: #fff8e6; border: 1px solid #f0e2b8; border-radius: 10px; padding: 16px 18px; font-size: 14px; color: #5c531f; margin-top: 10px; }}
+  .empty {{ color: #6b7280; font-style: italic; }}
+  .overview {{ background: #fff; border: 1px solid #e3e6ea; border-radius: 10px; padding: 18px 20px; margin-bottom: 8px; }}
   .ov-title {{ font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: #8a929e; margin: 10px 0 8px; font-weight: 700; }}
   .ov-title:first-child {{ margin-top: 0; }}
   .sentiment-bar {{ display: flex; height: 14px; border-radius: 7px; overflow: hidden; background: #eef0f3; }}
@@ -325,16 +315,6 @@ def build_html(themes: list, title: str, mode: str = "negative") -> str:
   .cat-track {{ flex: 1; background: #eef0f3; border-radius: 5px; height: 8px; overflow: hidden; }}
   .cat-fill {{ display: block; height: 100%; border-radius: 5px; }}
   .cat-num {{ width: 34px; text-align: right; color: #6b7280; font-weight: 600; }}
-  .titlerow {{ display: flex; align-items: center; justify-content: space-between; gap: 16px; }}
-  header a.brand {{ text-decoration: none; display: inline-block; margin-bottom: 12px; }}
-  header a.brand:hover {{ color: #8fd0fb; }}
-  .navsearch {{ position: relative; flex: 1; max-width: 320px; }}
-  .navsearch input {{ width: 100%; padding: 8px 12px; border-radius: 6px; border: 1px solid #2a475e; background: #16202d; color: #fff; font-size: 13px; }}
-  .navresults {{ position: absolute; left: 0; right: 0; top: 38px; background: #16202d; border: 1px solid #2a475e; border-radius: 6px; overflow: hidden; z-index: 5; }}
-  .navresult {{ display: flex; align-items: center; gap: 10px; padding: 8px 10px; cursor: pointer; }}
-  .navresult:hover {{ background: #1f3346; }}
-  .navresult img {{ width: 46px; height: 18px; object-fit: cover; border-radius: 2px; background: #0e1620; }}
-  .navresult span {{ font-size: 13px; color: #c7d5e0; }}
 </style>
 </head>
 <body>
@@ -342,49 +322,37 @@ def build_html(themes: list, title: str, mode: str = "negative") -> str:
   <main>
     <h2>Overview</h2>
     {overview_html}
-    {sections_html}
+    <div class="toggle-bar">
+      <button id="btn-fix" class="toggle-btn active" onclick="showSide('fix')">Fix These</button>
+      <button id="btn-love" class="toggle-btn" onclick="showSide('love')">Double Down</button>
+    </div>
+    <div id="side-fix">{fix_html}</div>
+    <div id="side-love" style="display:none">{love_html}</div>
     <h2>Low-signal reviews</h2>
-    {unclear_html}
+    {noise_html}
   </main>
-  {nav_js}
+  {nav_search}
+  {toggle_js}
 </body>
 </html>"""
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Generate an HTML report from a themes JSON file."
-    )
-    parser.add_argument(
-        "themes_file",
-        nargs="?",
-        default="data/themes_reviews_730_negative.json",
-        help="Path to a themes JSON file",
-    )
-    parser.add_argument(
-        "--title", default="Counter-Strike 2 (App 730)",
-        help="Game title shown in the report header",
-    )
-    parser.add_argument(
-        "--out", default="steamsifter_report.html",
-        help="Output HTML file path (default: steamsifter_report.html)",
-    )
-    parser.add_argument(
-        "--mode", default="negative", choices=["negative", "positive"],
-        help="negative = 'Fix These' framing, positive = 'Double Down' framing",
-    )
+    parser = argparse.ArgumentParser(description="Render a report from an analysis JSON file.")
+    parser.add_argument("analysis_file", nargs="?", default="data/analysis_730.json",
+                        help="Path to an analysis JSON file (from the pipeline)")
+    parser.add_argument("--title", default="Counter-Strike 2 (App 730)",
+                        help="Game title shown in the report header")
+    parser.add_argument("--out", default="steamsifter_report.html", help="Output HTML path")
     args = parser.parse_args()
 
-    with open(args.themes_file, encoding="utf-8") as f:
-        themes = json.load(f)
-
-    html_doc = build_html(themes, args.title, args.mode)
+    with open(args.analysis_file, encoding="utf-8") as f:
+        analysis = json.load(f)
 
     with open(args.out, "w", encoding="utf-8") as f:
-        f.write(html_doc)
+        f.write(build_html(analysis, args.title))
 
     print(f"Report written to {os.path.abspath(args.out)}")
-    print("Open it in your browser (double-click the file, or right-click > Open with > browser).")
 
 
 if __name__ == "__main__":

@@ -16,7 +16,7 @@ Then open http://127.0.0.1:5000 in your browser.
 from flask import Flask, request, jsonify, Response
 
 from search import search_games
-from pipeline import get_records
+from pipeline import get_analysis
 from report import build_html
 
 
@@ -68,10 +68,6 @@ HOME_PAGE = """<!DOCTYPE html>
       <input id="q" type="text" placeholder="Search a game, e.g. Counter-Strike" autocomplete="off" autofocus>
       <div id="results" class="results" style="display:none"></div>
     </div>
-    <div class="toggle">
-      <label><input type="radio" name="mode" value="negative" checked> What to fix (negative)</label>
-      <label><input type="radio" name="mode" value="positive"> What players love (positive)</label>
-    </div>
     <div class="hint">First-time analysis of a game can take up to a minute. Repeat lookups are instant.</div>
   </div>
 
@@ -119,12 +115,10 @@ HOME_PAGE = """<!DOCTYPE html>
   }
 
   function analyze(appid, name) {
-    const mode = document.querySelector('input[name=mode]:checked').value;
     document.getElementById('overlay-text').textContent =
       'Analyzing ' + name + '... first run can take up to a minute.';
     document.getElementById('overlay').classList.add('show');
-    window.location = '/analyze?appid=' + appid +
-      '&type=' + mode + '&title=' + encodeURIComponent(name);
+    window.location = '/analyze?appid=' + appid + '&title=' + encodeURIComponent(name);
   }
 </script>
 </body>
@@ -150,17 +144,11 @@ def analyze():
     if not appid:
         return "Missing appid", 400
 
-    review_type = request.args.get("type", "negative")
-    if review_type not in ("negative", "positive", "all"):
-        review_type = "negative"
-
     title = request.args.get("title") or f"App {appid}"
-    mode = "positive" if review_type == "positive" else "negative"
 
-    # get_records uses the cache, so repeat lookups are instant and free.
-    records = get_records(appid, review_type)
-    html_doc = build_html(records, title, mode)
-    return Response(html_doc, mimetype="text/html")
+    # get_analysis uses the cache, so repeat lookups are instant and free.
+    analysis = get_analysis(appid)
+    return Response(build_html(analysis, title), mimetype="text/html")
 
 
 if __name__ == "__main__":

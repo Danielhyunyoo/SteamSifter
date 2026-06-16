@@ -328,6 +328,62 @@ def analyze_reviews(client, all_reviews: list):
     return records, len(reviews), len(noise), themes
 
 
+def analyze_both(client, classified: list) -> dict:
+    """
+    Theme negative-leaning and positive-leaning reviews SEPARATELY, from a single
+    classified pass, so the report can show both "Fix These" and "Double Down".
+
+    Returns:
+      {
+        "negative": [theme records],   # negative + neutral constructive reviews
+        "positive": [theme records],   # positive constructive reviews
+        "noise": {"count": int, "examples": [...]},
+        "sentiment_totals": {"positive", "negative", "neutral"},  # all reviews
+        "total_reviews": int,
+      }
+    """
+    noise = [r for r in classified if not r.get("is_constructive", True)]
+    constructive = [r for r in classified if r.get("is_constructive", True)]
+    negative = [r for r in constructive if r.get("sentiment") in ("negative", "neutral")]
+    positive = [r for r in constructive if r.get("sentiment") == "positive"]
+
+    def theme_group(group, label):
+        if not group:
+            return []
+        print(f"Theming {label} reviews ({len(group)})...")
+        themes = discover_themes(client, group)
+        assign_themes(client, group, themes)
+        return aggregate_themes(group, themes)
+
+    negative_records = theme_group(negative, "negative")
+    positive_records = theme_group(positive, "positive")
+
+    noise_sorted = sorted(
+        noise,
+        key=lambda r: (r.get("helpful_votes", 0), r.get("playtime_at_review_hours", 0)),
+        reverse=True,
+    )
+    noise_summary = {
+        "count": len(noise),
+        "examples": [
+            {
+                "text": r["text"][:300],
+                "helpful_votes": r.get("helpful_votes", 0),
+                "playtime_at_review_hours": r.get("playtime_at_review_hours", 0),
+            }
+            for r in noise_sorted[:EXAMPLES_PER_THEME]
+        ],
+    }
+
+    return {
+        "negative": negative_records,
+        "positive": positive_records,
+        "noise": noise_summary,
+        "sentiment_totals": _count_sentiments(classified),
+        "total_reviews": len(classified),
+    }
+
+
 # ----------------------------------------------------------------------------
 # Command-line entry point
 # ----------------------------------------------------------------------------
