@@ -268,53 +268,54 @@ def build_html(analysis: dict, title: str) -> str:
 <title>SteamSifter Report: {esc(title)}</title>
 <style>
   * {{ box-sizing: border-box; }}
-  body {{ font-family: -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; background: #f4f5f7; color: #1c1e21; }}
-  header {{ background: #171a21; color: #fff; padding: 24px 32px; }}
+  body {{ font-family: "Motiva Sans", -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; background: #1b2838; color: #c7d5e0; }}
+  header {{ background: #171a21; color: #fff; padding: 24px 32px; border-bottom: 1px solid #0e1620; }}
   header a.brand {{ font-size: 14px; letter-spacing: 2px; color: #66c0f4; text-transform: uppercase; text-decoration: none; display: inline-block; margin-bottom: 12px; }}
   header a.brand:hover {{ color: #8fd0fb; }}
   .titlerow {{ display: flex; align-items: center; justify-content: space-between; gap: 16px; }}
-  header h1 {{ margin: 0 0 4px; font-size: 26px; }}
-  header .meta {{ color: #9aa4b2; font-size: 14px; }}
+  header h1 {{ margin: 0 0 4px; font-size: 26px; color: #fff; font-weight: 500; }}
+  header .meta {{ color: #8f98a0; font-size: 14px; }}
   .navsearch {{ position: relative; flex: 1; max-width: 320px; }}
-  .navsearch input {{ width: 100%; padding: 8px 12px; border-radius: 6px; border: 1px solid #2a475e; background: #16202d; color: #fff; font-size: 13px; }}
-  .navresults {{ position: absolute; left: 0; right: 0; top: 38px; background: #16202d; border: 1px solid #2a475e; border-radius: 6px; overflow: hidden; z-index: 5; }}
+  .navsearch input {{ width: 100%; padding: 8px 12px; border-radius: 3px; border: 1px solid #2a3a4d; background: #316282; color: #fff; font-size: 13px; }}
+  .navsearch input::placeholder {{ color: #c6dbec; }}
+  .navresults {{ position: absolute; left: 0; right: 0; top: 38px; background: #16202d; border: 1px solid #2a3a4d; border-radius: 3px; overflow: hidden; z-index: 5; }}
   .navresult {{ display: flex; align-items: center; gap: 10px; padding: 8px 10px; cursor: pointer; }}
   .navresult:hover {{ background: #1f3346; }}
   .navresult img {{ width: 46px; height: 18px; object-fit: cover; border-radius: 2px; background: #0e1620; }}
   .navresult span {{ font-size: 13px; color: #c7d5e0; }}
   main {{ max-width: 880px; margin: 0 auto; padding: 28px 20px 60px; }}
-  h2 {{ font-size: 18px; margin: 24px 0 12px; }}
-  .toggle-bar {{ display: inline-flex; background: #e3e6ea; border-radius: 8px; padding: 4px; margin: 8px 0 4px; }}
-  .toggle-btn {{ border: 0; background: transparent; padding: 8px 18px; border-radius: 6px; font-size: 14px; font-weight: 600; color: #5b6470; cursor: pointer; }}
-  .toggle-btn.active {{ background: #fff; color: #1c1e21; box-shadow: 0 1px 2px rgba(0,0,0,.1); }}
-  .card {{ background: #fff; border: 1px solid #e3e6ea; border-radius: 10px; padding: 18px 20px; margin-bottom: 14px; box-shadow: 0 1px 2px rgba(0,0,0,.04); }}
+  h2 {{ font-size: 18px; margin: 24px 0 12px; color: #fff; font-weight: 500; }}
+  .toggle-bar {{ display: inline-flex; background: #16202d; border: 1px solid #2a3a4d; border-radius: 4px; padding: 3px; margin: 8px 0 4px; }}
+  .toggle-btn {{ border: 0; background: transparent; padding: 8px 18px; border-radius: 3px; font-size: 14px; font-weight: 600; color: #8f98a0; cursor: pointer; }}
+  .toggle-btn.active {{ background: linear-gradient(to bottom, #1a9fff, #0a78c2); color: #fff; }}
+  .card {{ background: #16202d; border: 1px solid #233040; border-radius: 4px; padding: 18px 20px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.2); }}
   .card-head {{ display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }}
-  .rank {{ font-weight: 700; color: #8a929e; font-size: 14px; }}
-  .theme-name {{ font-weight: 700; font-size: 16px; }}
-  .pill {{ color: #1c1e21; font-size: 11px; font-weight: 700; padding: 2px 9px; border-radius: 20px; text-transform: lowercase; }}
-  .count {{ margin-left: auto; font-size: 13px; color: #6b7280; font-weight: 600; }}
-  .bar-track {{ background: #eef0f3; border-radius: 6px; height: 8px; margin: 12px 0 10px; overflow: hidden; }}
-  .bar-fill {{ height: 100%; border-radius: 6px; }}
-  .description {{ font-size: 14px; color: #3c4149; margin: 0 0 12px; }}
-  .example {{ border-left: 3px solid #e3e6ea; padding: 4px 0 4px 12px; margin: 8px 0; }}
-  .quote {{ font-style: italic; color: #2c3038; font-size: 13px; }}
+  .rank {{ font-weight: 700; color: #66c0f4; font-size: 14px; }}
+  .theme-name {{ font-weight: 700; font-size: 16px; color: #fff; }}
+  .pill {{ color: #0e1620; font-size: 11px; font-weight: 700; padding: 2px 9px; border-radius: 3px; text-transform: lowercase; }}
+  .count {{ margin-left: auto; font-size: 13px; color: #8f98a0; font-weight: 600; }}
+  .bar-track {{ background: #0e1620; border-radius: 3px; height: 8px; margin: 12px 0 10px; overflow: hidden; }}
+  .bar-fill {{ height: 100%; border-radius: 3px; }}
+  .description {{ font-size: 14px; color: #acb2b8; margin: 0 0 12px; }}
+  .example {{ border-left: 3px solid #2a475e; padding: 4px 0 4px 12px; margin: 8px 0; }}
+  .quote {{ font-style: italic; color: #c7d5e0; font-size: 13px; }}
   .badges {{ display: block; margin-top: 4px; }}
-  .badge {{ display: inline-block; font-size: 11px; background: #eef0f3; color: #5b6470; border-radius: 4px; padding: 1px 7px; margin-right: 6px; }}
-  .unclear {{ background: #fff8e6; border: 1px solid #f0e2b8; border-radius: 10px; padding: 16px 18px; font-size: 14px; color: #5c531f; margin-top: 10px; }}
-  .empty {{ color: #6b7280; font-style: italic; }}
-  .overview {{ background: #fff; border: 1px solid #e3e6ea; border-radius: 10px; padding: 18px 20px; margin-bottom: 8px; }}
-  .ov-title {{ font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: #8a929e; margin: 10px 0 8px; font-weight: 700; }}
+  .badge {{ display: inline-block; font-size: 11px; background: #2a3f5a; color: #c7d5e0; border-radius: 3px; padding: 1px 7px; margin-right: 6px; }}
+  .unclear {{ background: #16202d; border: 1px solid #2a475e; border-left: 3px solid #66c0f4; border-radius: 3px; padding: 14px 16px; font-size: 14px; color: #8f98a0; margin-top: 10px; }}
+  .empty {{ color: #8f98a0; font-style: italic; }}
+  .overview {{ background: #16202d; border: 1px solid #2a3a4d; border-radius: 4px; padding: 18px 20px; margin-bottom: 8px; }}
+  .ov-title {{ font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: #66c0f4; margin: 10px 0 8px; font-weight: 700; }}
   .ov-title:first-child {{ margin-top: 0; }}
-  .sentiment-bar {{ display: flex; height: 14px; border-radius: 7px; overflow: hidden; background: #eef0f3; }}
+  .sentiment-bar {{ display: flex; height: 14px; border-radius: 3px; overflow: hidden; background: #0e1620; }}
   .seg {{ height: 100%; }}
-  .legend {{ margin: 8px 0 4px; font-size: 12px; color: #5b6470; }}
+  .legend {{ margin: 8px 0 4px; font-size: 12px; color: #8f98a0; }}
   .legend-item {{ margin-right: 14px; text-transform: lowercase; }}
   .dot {{ display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; vertical-align: middle; }}
   .cat-row {{ display: flex; align-items: center; gap: 8px; margin: 5px 0; font-size: 12px; }}
-  .cat-label {{ width: 95px; color: #3c4149; text-transform: lowercase; }}
-  .cat-track {{ flex: 1; background: #eef0f3; border-radius: 5px; height: 8px; overflow: hidden; }}
-  .cat-fill {{ display: block; height: 100%; border-radius: 5px; }}
-  .cat-num {{ width: 34px; text-align: right; color: #6b7280; font-weight: 600; }}
+  .cat-label {{ width: 95px; color: #acb2b8; text-transform: lowercase; }}
+  .cat-track {{ flex: 1; background: #0e1620; border-radius: 3px; height: 8px; overflow: hidden; }}
+  .cat-fill {{ display: block; height: 100%; border-radius: 3px; }}
+  .cat-num {{ width: 34px; text-align: right; color: #8f98a0; font-weight: 600; }}
 </style>
 </head>
 <body>

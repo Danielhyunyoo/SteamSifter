@@ -36,7 +36,7 @@ HOME_PAGE = """<!DOCTYPE html>
 <style>
   * { box-sizing: border-box; }
   body { font-family: -apple-system, Segoe UI, Roboto, sans-serif; margin: 0;
-         background: #1b2838; color: #c7d5e0; display: flex; min-height: 100vh;
+         background: linear-gradient(to bottom, #1b2838, #16202d) fixed; color: #c7d5e0; display: flex; min-height: 100vh;
          align-items: center; justify-content: center; }
   .wrap { width: 100%; max-width: 560px; padding: 24px; text-align: center; }
   .brand { color: #66c0f4; letter-spacing: 3px; text-transform: uppercase; font-size: 14px; }
@@ -181,7 +181,7 @@ ANALYZING_PAGE = """<!DOCTYPE html>
 <style>
   * { box-sizing: border-box; }
   body { font-family: -apple-system, Segoe UI, Roboto, sans-serif; margin: 0;
-         background: #1b2838; color: #c7d5e0; display: flex; min-height: 100vh;
+         background: linear-gradient(to bottom, #1b2838, #16202d) fixed; color: #c7d5e0; display: flex; min-height: 100vh;
          align-items: center; justify-content: center; }
   .box { width: 100%; max-width: 520px; padding: 24px; text-align: center; }
   .brand { color: #66c0f4; letter-spacing: 3px; text-transform: uppercase; font-size: 13px; }
