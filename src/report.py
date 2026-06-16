@@ -80,12 +80,34 @@ NAV_SEARCH_JS = """
 # Toggle between the Fix These / Double Down views (plain string).
 TOGGLE_JS = """
 <script>
+// Grow every [data-w] bar under root from 0 to its target width.
+function animateBars(root) {
+  root.querySelectorAll('[data-w]').forEach(function (el) {
+    el.style.width = '0%';
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () { el.style.width = el.getAttribute('data-w') + '%'; });
+    });
+  });
+}
+
 function showSide(which) {
-  document.getElementById('side-fix').style.display = (which === 'fix') ? 'block' : 'none';
-  document.getElementById('side-love').style.display = (which === 'love') ? 'block' : 'none';
+  var fix = document.getElementById('side-fix');
+  var love = document.getElementById('side-love');
+  fix.style.display = (which === 'fix') ? 'block' : 'none';
+  love.style.display = (which === 'love') ? 'block' : 'none';
   document.getElementById('btn-fix').classList.toggle('active', which === 'fix');
   document.getElementById('btn-love').classList.toggle('active', which === 'love');
+  var slider = document.getElementById('toggle-slider');
+  if (slider) slider.style.transform = (which === 'love') ? 'translateX(100%)' : 'translateX(0)';
+  animateBars(which === 'love' ? love : fix);
 }
+
+document.addEventListener('DOMContentLoaded', function () {
+  var overview = document.querySelector('.overview');
+  if (overview) animateBars(overview);
+  var fix = document.getElementById('side-fix');
+  if (fix) animateBars(fix);
+});
 </script>
 """
 
@@ -129,7 +151,7 @@ def render_theme_card(rank: int, theme: dict, max_impact: float) -> str:
         f'<span class="pill" style="background:{color}">{esc(category)}</span>'
         f'<span class="count">{count} reviews &middot; impact {impact:g}</span>'
         '</div>'
-        f'<div class="bar-track"><div class="bar-fill" style="width:{width}%;background:{color}"></div></div>'
+        f'<div class="bar-track"><div class="bar-fill" data-w="{width}" style="width:0%;background:{color}"></div></div>'
         f'<p class="description">{description}</p>'
         f'<div class="examples">{examples_html}</div>'
         '</div>'
@@ -192,7 +214,7 @@ def render_overview(neg: list, pos: list, sentiment_totals: dict, total_reviews:
         val = sent.get(key, 0)
         pct = (val / sent_total * 100) if sent_total else 0
         if val:
-            segments += f'<div class="seg" style="width:{pct:.1f}%;background:{SENTIMENT_COLORS[key]}"></div>'
+            segments += f'<div class="seg" data-w="{pct:.1f}" style="width:0%;background:{SENTIMENT_COLORS[key]}"></div>'
         legend += (f'<span class="legend-item"><span class="dot" '
                    f'style="background:{SENTIMENT_COLORS[key]}"></span>{key} {val}</span>')
 
@@ -203,7 +225,7 @@ def render_overview(neg: list, pos: list, sentiment_totals: dict, total_reviews:
         cat_rows += (
             '<div class="cat-row">'
             f'<span class="cat-label">{esc(category)}</span>'
-            f'<span class="cat-track"><span class="cat-fill" style="width:{pct:.1f}%;background:{color}"></span></span>'
+            f'<span class="cat-track"><span class="cat-fill" data-w="{pct:.1f}" style="width:0%;background:{color}"></span></span>'
             f'<span class="cat-num">{c}</span>'
             '</div>'
         )
@@ -285,9 +307,10 @@ def build_html(analysis: dict, title: str) -> str:
   .navresult span {{ font-size: 13px; color: #c7d5e0; }}
   main {{ max-width: 880px; margin: 0 auto; padding: 28px 20px 60px; }}
   h2 {{ font-size: 18px; margin: 24px 0 12px; color: #fff; font-weight: 500; }}
-  .toggle-bar {{ display: inline-flex; background: #16202d; border: 1px solid #2a3a4d; border-radius: 4px; padding: 3px; margin: 8px 0 4px; }}
-  .toggle-btn {{ border: 0; background: transparent; padding: 8px 18px; border-radius: 3px; font-size: 14px; font-weight: 600; color: #8f98a0; cursor: pointer; }}
-  .toggle-btn.active {{ background: linear-gradient(to bottom, #1a9fff, #0a78c2); color: #fff; }}
+  .toggle-bar {{ position: relative; display: inline-flex; background: #16202d; border: 1px solid #2a3a4d; border-radius: 4px; padding: 3px; margin: 8px 0 4px; }}
+  .toggle-slider {{ position: absolute; top: 3px; bottom: 3px; left: 3px; width: calc(50% - 3px); border-radius: 3px; background: linear-gradient(to bottom, #1a9fff, #0a78c2); transition: transform .25s ease; z-index: 0; }}
+  .toggle-btn {{ position: relative; z-index: 1; flex: 1 1 0; min-width: 130px; text-align: center; border: 0; background: transparent; padding: 8px 18px; border-radius: 3px; font-size: 14px; font-weight: 600; color: #8f98a0; cursor: pointer; transition: color .25s ease; }}
+  .toggle-btn.active {{ color: #fff; }}
   .card {{ background: #16202d; border: 1px solid #233040; border-radius: 4px; padding: 18px 20px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.2); }}
   .card-head {{ display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }}
   .rank {{ font-weight: 700; color: #66c0f4; font-size: 14px; }}
@@ -295,7 +318,7 @@ def build_html(analysis: dict, title: str) -> str:
   .pill {{ color: #0e1620; font-size: 11px; font-weight: 700; padding: 2px 9px; border-radius: 3px; text-transform: lowercase; }}
   .count {{ margin-left: auto; font-size: 13px; color: #8f98a0; font-weight: 600; }}
   .bar-track {{ background: #0e1620; border-radius: 3px; height: 8px; margin: 12px 0 10px; overflow: hidden; }}
-  .bar-fill {{ height: 100%; border-radius: 3px; }}
+  .bar-fill {{ height: 100%; border-radius: 3px; transition: width .8s cubic-bezier(.25,.8,.25,1); }}
   .description {{ font-size: 14px; color: #acb2b8; margin: 0 0 12px; }}
   .example {{ border-left: 3px solid #2a475e; padding: 4px 0 4px 12px; margin: 8px 0; }}
   .quote {{ font-style: italic; color: #c7d5e0; font-size: 13px; }}
@@ -307,14 +330,14 @@ def build_html(analysis: dict, title: str) -> str:
   .ov-title {{ font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: #66c0f4; margin: 10px 0 8px; font-weight: 700; }}
   .ov-title:first-child {{ margin-top: 0; }}
   .sentiment-bar {{ display: flex; height: 14px; border-radius: 3px; overflow: hidden; background: #0e1620; }}
-  .seg {{ height: 100%; }}
+  .seg {{ height: 100%; transition: width .8s cubic-bezier(.25,.8,.25,1); }}
   .legend {{ margin: 8px 0 4px; font-size: 12px; color: #8f98a0; }}
   .legend-item {{ margin-right: 14px; text-transform: lowercase; }}
   .dot {{ display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; vertical-align: middle; }}
   .cat-row {{ display: flex; align-items: center; gap: 8px; margin: 5px 0; font-size: 12px; }}
   .cat-label {{ width: 95px; color: #acb2b8; text-transform: lowercase; }}
   .cat-track {{ flex: 1; background: #0e1620; border-radius: 3px; height: 8px; overflow: hidden; }}
-  .cat-fill {{ display: block; height: 100%; border-radius: 3px; }}
+  .cat-fill {{ display: block; height: 100%; border-radius: 3px; transition: width .8s cubic-bezier(.25,.8,.25,1); }}
   .cat-num {{ width: 34px; text-align: right; color: #8f98a0; font-weight: 600; }}
 </style>
 </head>
@@ -324,6 +347,7 @@ def build_html(analysis: dict, title: str) -> str:
     <h2>Overview</h2>
     {overview_html}
     <div class="toggle-bar">
+      <div class="toggle-slider" id="toggle-slider"></div>
       <button id="btn-fix" class="toggle-btn active" onclick="showSide('fix')">Fix These</button>
       <button id="btn-love" class="toggle-btn" onclick="showSide('love')">Double Down</button>
     </div>
