@@ -1,0 +1,17 @@
+# Render Blueprint for SteamSifter. In the Render dashboard, create a new
+# Blueprint from this repo, then set the OPENAI_API_KEY secret when prompted.
+services:
+  - type: web
+    name: steamsifter
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    # One worker + threads because progress state is in-memory (single process).
+    startCommand: gunicorn --pythonpath src --bind 0.0.0.0:$PORT --workers 1 --threads 8 --timeout 120 app:app
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.5
+      - key: LLM_PROVIDER
+        value: openai
+      - key: OPENAI_API_KEY
+        sync: false   # set this secret in the Render dashboard; never committed

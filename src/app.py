@@ -17,6 +17,9 @@ import threading
 import uuid
 
 from flask import Flask, request, jsonify, Response
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from search import search_games
 from pipeline import get_analysis
@@ -24,6 +27,15 @@ from report import build_html
 
 
 app = Flask(__name__)
+
+# Behind a host's proxy (e.g. Render), trust X-Forwarded-* so the rate limiter
+# sees real client IPs rather than the proxy's.
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+
+# Per-visitor rate limits to protect the shared API key. In-memory storage is
+# fine for the single-worker deploy; a multi-worker setup would need a shared
+# store (parked with the concurrency work).
+limiter = Limiter(get_remote_address, app=app)
 
 
 # The home page. Plain string (not an f-string) so the JS braces are safe.
@@ -133,6 +145,7 @@ def api_search():
 
 
 @app.route("/analyze")
+@limiter.limit("40 per hour")
 def analyze():
     """Run the cached pipeline for a game and serve its report."""
     appid = request.args.get("appid")
@@ -251,6 +264,7 @@ def analyzing():
 
 
 @app.route("/start")
+@limiter.limit("10 per hour; 3 per minute")
 def start():
     """Kick off a background analysis job; returns a job id to poll."""
     appid = request.args.get("appid")
