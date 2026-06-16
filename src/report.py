@@ -118,16 +118,29 @@ def esc(text) -> str:
 
 
 def render_example(example: dict) -> str:
-    """Render one example quote with its credibility badges."""
+    """Render one example quote with credibility badges and a link to the real
+    Steam review (when we have the reviewer's permalink)."""
     text = esc(example.get("text", ""))
     hours = example.get("playtime_at_review_hours", 0)
     helpful = example.get("helpful_votes", 0)
+    url = example.get("url")
+
+    if url:
+        quote_html = (f'<a class="quote quote-link" href="{esc(url)}" target="_blank" '
+                      f'rel="noopener">&ldquo;{text}&rdquo;</a>')
+        source = (f'<a class="source" href="{esc(url)}" target="_blank" '
+                  'rel="noopener">View on Steam &#8599;</a>')
+    else:
+        quote_html = f'<span class="quote">&ldquo;{text}&rdquo;</span>'
+        source = ''
+
     return (
         '<div class="example">'
-        f'<span class="quote">&ldquo;{text}&rdquo;</span>'
+        f'{quote_html}'
         '<span class="badges">'
         f'<span class="badge">{hours:g}h played</span>'
         f'<span class="badge">{helpful} helpful</span>'
+        f'{source}'
         '</span>'
         '</div>'
     )
@@ -339,6 +352,10 @@ def build_html(analysis: dict, title: str) -> str:
   .cat-track {{ flex: 1; background: #0e1620; border-radius: 3px; height: 8px; overflow: hidden; }}
   .cat-fill {{ display: block; height: 100%; border-radius: 3px; transition: width .8s cubic-bezier(.25,.8,.25,1); }}
   .cat-num {{ width: 34px; text-align: right; color: #8f98a0; font-weight: 600; }}
+  .quote-link {{ color: #c7d5e0; text-decoration: none; }}
+  .quote-link:hover {{ color: #66c0f4; text-decoration: underline; }}
+  .source {{ display: inline-block; font-size: 11px; color: #66c0f4; text-decoration: none; margin-left: 2px; }}
+  .source:hover {{ text-decoration: underline; }}
 </style>
 </head>
 <body>

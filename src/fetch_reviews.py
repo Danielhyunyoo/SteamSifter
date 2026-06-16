@@ -80,6 +80,7 @@ def parse_review(raw: dict) -> dict:
 
     return {
         "recommendation_id": raw.get("recommendationid"),
+        "steamid": author.get("steamid"),
         "text": (raw.get("review") or "").strip(),
         "voted_up": raw.get("voted_up", False),            # True = positive
         "helpful_votes": raw.get("votes_up", 0),           # community "helpful"

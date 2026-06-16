@@ -53,6 +53,20 @@ def cache_age_days(path: str) -> float:
     return (time.time() - os.path.getmtime(path)) / 86400
 
 
+def _attach_review_urls(analysis: dict, app_id: str) -> None:
+    """Add a Steam review permalink to every example, from its steamid + app_id."""
+    def add(examples):
+        for ex in examples or []:
+            sid = ex.get("steamid")
+            if sid:
+                ex["url"] = f"https://steamcommunity.com/profiles/{sid}/recommended/{app_id}/"
+    for rec in analysis.get("negative", []):
+        add(rec.get("examples"))
+    for rec in analysis.get("positive", []):
+        add(rec.get("examples"))
+    add(analysis.get("noise", {}).get("examples"))
+
+
 def get_analysis(app_id: str, max_reviews: int = 300, refresh: bool = False,
                  max_age_days: float = DEFAULT_MAX_AGE_DAYS, progress=None) -> dict:
     """
@@ -104,6 +118,10 @@ def get_analysis(app_id: str, max_reviews: int = 300, refresh: bool = False,
         client, classified,
         on_progress=lambda f, msg: report(55 + int(f * 43), msg),
     )
+
+    # Attach each example review's Steam permalink so users can verify it is real.
+    _attach_review_urls(analysis, app_id)
+
     report(100, "Done")
 
     # Save the combined analysis (this IS the cache for next time).
