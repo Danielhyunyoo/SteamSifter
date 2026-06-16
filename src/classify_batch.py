@@ -130,7 +130,7 @@ def classify_batch(client, texts: list) -> list:
 # Classifying a whole list of reviews
 # ----------------------------------------------------------------------------
 
-def classify_all(client, reviews: list) -> list:
+def classify_all(client, reviews: list, on_progress=None) -> list:
     """
     Classify every review, in batches, and attach sentiment + category to each.
 
@@ -173,6 +173,10 @@ def classify_all(client, reviews: list) -> list:
                 review["category"] = "other"
                 review["is_constructive"] = True  # don't filter what we are unsure about
             enriched.append(review)
+
+        # Report progress as a fraction in [0, 1] (longest phase = smooth bar).
+        if on_progress:
+            on_progress(batch_num / total_batches)
 
         # Pause between batches to respect the free-tier rate limit.
         if start + BATCH_SIZE < total:

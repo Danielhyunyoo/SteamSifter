@@ -54,13 +54,14 @@ def cache_age_days(path: str) -> float:
 
 
 def get_analysis(app_id: str, max_reviews: int = 300, refresh: bool = False,
-                 max_age_days: float = DEFAULT_MAX_AGE_DAYS) -> dict:
+                 max_age_days: float = DEFAULT_MAX_AGE_DAYS, progress=None) -> dict:
     """
     Return the combined analysis for a game (negative + positive themes), from
     cache if fresh and readable, otherwise by running the full pipeline and
     caching the result. This is the reusable core the web app calls.
     """
     paths = cache_paths(app_id)
+    report = progress or (lambda pct, msg: None)
 
     # ---- Cache check: reuse the analysis if it is fresh AND readable ----
     if not refresh and is_fresh(paths["analysis"], max_age_days):
@@ -69,6 +70,7 @@ def get_analysis(app_id: str, max_reviews: int = 300, refresh: bool = False,
                 analysis = json.load(f)
             print(f"Cache HIT for app {app_id}. Reusing analysis from "
                   f"{cache_age_days(paths['analysis']):.1f} day(s) ago. No API calls needed.")
+            report(100, "Loaded from cache")
             return analysis
         except (json.JSONDecodeError, OSError) as err:
             print(f"Cached analysis was unreadable ({err}); re-analyzing.")
@@ -79,6 +81,7 @@ def get_analysis(app_id: str, max_reviews: int = 300, refresh: bool = False,
     client = get_client()
 
     # Step 1: fetch ALL reviews (reuse the saved file unless refreshing).
+    report(3, "Fetching reviews")
     if refresh or not os.path.exists(paths["reviews"]):
         print(f"Fetching up to {max_reviews} reviews (all sentiments)...")
         reviews = fetch_reviews(app_id, max_reviews=max_reviews, review_type="all")
@@ -88,13 +91,20 @@ def get_analysis(app_id: str, max_reviews: int = 300, refresh: bool = False,
         with open(paths["reviews"], encoding="utf-8") as f:
             reviews = json.load(f)
 
-    # Step 2: classify (sentiment, category, is_constructive).
-    print("Classifying reviews...")
-    classified = classify_all(client, reviews)
+    # Step 2: classify (sentiment, category, is_constructive). Maps to 10%-55%.
+    report(10, "Classifying reviews")
+    classified = classify_all(
+        client, reviews,
+        on_progress=lambda f: report(10 + int(f * 45), "Classifying reviews"),
+    )
     save_classified(classified, paths["reviews"])
 
-    # Step 3: theme negative and positive sides separately.
-    analysis = analyze_both(client, classified)
+    # Step 3: theme negative and positive sides separately. Maps to 55%-98%.
+    analysis = analyze_both(
+        client, classified,
+        on_progress=lambda f, msg: report(55 + int(f * 43), msg),
+    )
+    report(100, "Done")
 
     # Save the combined analysis (this IS the cache for next time).
     os.makedirs(DATA_DIR, exist_ok=True)

@@ -328,7 +328,7 @@ def analyze_reviews(client, all_reviews: list):
     return records, len(reviews), len(noise), themes
 
 
-def analyze_both(client, classified: list) -> dict:
+def analyze_both(client, classified: list, on_progress=None) -> dict:
     """
     Theme negative-leaning and positive-leaning reviews SEPARATELY, from a single
     classified pass, so the report can show both "Fix These" and "Double Down".
@@ -355,8 +355,14 @@ def analyze_both(client, classified: list) -> dict:
         assign_themes(client, group, themes)
         return aggregate_themes(group, themes)
 
+    if on_progress:
+        on_progress(0.0, "Finding what players want fixed")
     negative_records = theme_group(negative, "negative")
+    if on_progress:
+        on_progress(0.55, "Finding what players love")
     positive_records = theme_group(positive, "positive")
+    if on_progress:
+        on_progress(1.0, "Finalizing report")
 
     noise_sorted = sorted(
         noise,

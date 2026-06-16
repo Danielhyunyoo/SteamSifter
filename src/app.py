@@ -13,6 +13,9 @@ Run it:
 Then open http://127.0.0.1:5000 in your browser.
 """
 
+import threading
+import uuid
+
 from flask import Flask, request, jsonify, Response
 
 from search import search_games
@@ -115,10 +118,7 @@ HOME_PAGE = """<!DOCTYPE html>
   }
 
   function analyze(appid, name) {
-    document.getElementById('overlay-text').textContent =
-      'Analyzing ' + name + '... first run can take up to a minute.';
-    document.getElementById('overlay').classList.add('show');
-    window.location = '/analyze?appid=' + appid + '&title=' + encodeURIComponent(name);
+    window.location = '/analyzing?appid=' + appid + '&title=' + encodeURIComponent(name);
   }
 </script>
 </body>
@@ -151,5 +151,129 @@ def analyze():
     return Response(build_html(analysis, title), mimetype="text/html")
 
 
+# ----------------------------------------------------------------------------
+# Background analysis jobs (so the page can show a real progress bar)
+# ----------------------------------------------------------------------------
+
+# In-memory job registry. Fine for single-process dev; a real deployment would
+# use a shared store (parked with the concurrency work).
+JOBS = {}
+
+
+def _run_job(job_id, appid):
+    """Run the analysis in a background thread, recording progress in JOBS."""
+    def progress(pct, msg):
+        JOBS[job_id]["percent"] = pct
+        JOBS[job_id]["message"] = msg
+    try:
+        get_analysis(appid, progress=progress)   # writes the cache as it goes
+        JOBS[job_id].update(percent=100, message="Done", done=True)
+    except Exception as e:
+        JOBS[job_id].update(error=str(e), done=True)
+
+
+ANALYZING_PAGE = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Analyzing... | SteamSifter</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, Segoe UI, Roboto, sans-serif; margin: 0;
+         background: #1b2838; color: #c7d5e0; display: flex; min-height: 100vh;
+         align-items: center; justify-content: center; }
+  .box { width: 100%; max-width: 520px; padding: 24px; text-align: center; }
+  .brand { color: #66c0f4; letter-spacing: 3px; text-transform: uppercase; font-size: 13px; }
+  h1 { margin: 10px 0 24px; font-size: 24px; color: #fff; }
+  .track { background: #16202d; border: 1px solid #2a475e; border-radius: 8px; height: 22px; overflow: hidden; }
+  .fill { height: 100%; width: 0%; background: linear-gradient(90deg,#1a9fff,#66c0f4); transition: width .4s ease; }
+  .pct { font-size: 28px; font-weight: 700; color: #fff; margin: 16px 0 4px; }
+  .msg { color: #8f98a0; font-size: 14px; min-height: 20px; }
+  .err { color: #e06c75; font-size: 14px; margin-top: 14px; }
+</style>
+</head>
+<body>
+  <div class="box">
+    <div class="brand">SteamSifter</div>
+    <h1 id="title">Analyzing...</h1>
+    <div class="track"><div id="fill" class="fill"></div></div>
+    <div id="pct" class="pct">0%</div>
+    <div id="msg" class="msg">Starting...</div>
+    <div id="err" class="err"></div>
+  </div>
+<script>
+  const params = new URLSearchParams(window.location.search);
+  const appid = params.get('appid');
+  const title = params.get('title') || '';
+  if (title) document.getElementById('title').textContent = 'Analyzing ' + title;
+
+  const fill = document.getElementById('fill');
+  const pct = document.getElementById('pct');
+  const msg = document.getElementById('msg');
+
+  function setBar(p, m) {
+    fill.style.width = p + '%';
+    pct.textContent = p + '%';
+    if (m) msg.textContent = m;
+  }
+  function showError(e) {
+    document.getElementById('err').textContent =
+      'Something went wrong: ' + e + '. Go back and try again.';
+    msg.textContent = '';
+  }
+
+  let jobId = null;
+  fetch('/start?appid=' + encodeURIComponent(appid))
+    .then(r => r.json())
+    .then(d => { if (d.error) { showError(d.error); return; } jobId = d.job; poll(); })
+    .catch(() => showError('Could not start analysis.'));
+
+  function poll() {
+    fetch('/progress?job=' + jobId)
+      .then(r => r.json())
+      .then(d => {
+        if (d.error) { showError(d.error); return; }
+        setBar(d.percent || 0, d.message);
+        if (d.done) {
+          window.location = '/analyze?appid=' + encodeURIComponent(appid) +
+            '&title=' + encodeURIComponent(title);
+        } else {
+          setTimeout(poll, 800);
+        }
+      })
+      .catch(() => setTimeout(poll, 1500));
+  }
+</script>
+</body>
+</html>"""
+
+
+@app.route("/analyzing")
+def analyzing():
+    """A progress page that starts the analysis and polls until it is ready."""
+    return ANALYZING_PAGE
+
+
+@app.route("/start")
+def start():
+    """Kick off a background analysis job; returns a job id to poll."""
+    appid = request.args.get("appid")
+    if not appid:
+        return jsonify({"error": "missing appid"}), 400
+    job_id = uuid.uuid4().hex
+    JOBS[job_id] = {"percent": 0, "message": "Starting...", "done": False, "error": None}
+    threading.Thread(target=_run_job, args=(job_id, appid), daemon=True).start()
+    return jsonify({"job": job_id})
+
+
+@app.route("/progress")
+def progress_route():
+    """Return the current progress for a job id."""
+    job = request.args.get("job", "")
+    return jsonify(JOBS.get(job, {"error": "unknown job", "done": True}))
+
+
 if __name__ == "__main__":
-    app.run(debug=True, port=5000)
+    # threaded=True lets the progress endpoint respond while a job runs.
+    app.run(debug=True, threaded=True, port=5000)
