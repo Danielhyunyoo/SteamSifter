@@ -42,6 +42,8 @@ SteamSifter will enter a game's app ID, pulls its reviews automatically, filters
 
 SteamSifter currently runs on a free-tier AI key, which caps how many requests it can make per day and per minute. That is fine for what this is right now: a solo project built to handle small, low-traffic usage. Scaling to many concurrent users would burn through the free quota and cause timeouts. Doing that properly would require a paid API key (where classifying a few hundred reviews costs only pennies), plus per-game caching so popular titles are only analyzed once. Until then, treat this as a single-user tool.
 
+As of 6/15/2026, SteamSifter currently runs using an OpenAI API, and switches to other free-tier keys when necessary.
+
 ## Disclaimer
 
 SteamSifter is an independent project and is not affiliated with, endorsed by, or sponsored by Valve or Steam. "Steam" is a trademark of Valve Corporation.
