@@ -22,6 +22,23 @@ SteamSifter runs as a persistent Flask process, so use a "web service" host
 - Single worker for now (in-memory progress state); heavier concurrency is
   future work.
 
+## Persistent cache (free, via Upstash Redis)
+
+By default the cache lives in local files, which Render's free tier wipes on
+each deploy. To make analyzed games persist, point the app at a free Upstash
+Redis database:
+
+1. Go to https://upstash.com, sign up (free), and create a Redis database.
+2. In the database's "Connect" panel, copy the `rediss://...` connection URL
+   (the one with the password in it).
+3. In your Render service: Environment > Add Environment Variable >
+   `REDIS_URL` = that `rediss://...` URL. Save.
+4. Render redeploys. Analyses are now stored in Redis (with a 7-day TTL) and
+   survive future deploys.
+
+With no `REDIS_URL` set (e.g. running locally), the app automatically falls back
+to local JSON files, so nothing else changes.
+
 ## Run locally instead
     pip install -r requirements.txt
     python src/app.py        # http://127.0.0.1:5000

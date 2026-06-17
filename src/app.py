@@ -195,8 +195,8 @@ ANALYZING_PAGE = """<!DOCTYPE html>
   .brand { color: #66c0f4; letter-spacing: 3px; text-transform: uppercase; font-size: 13px; }
   h1 { margin: 10px 0 24px; font-size: 24px; color: #fff; }
   .track { background: #16202d; border: 1px solid #2a475e; border-radius: 8px; height: 22px; overflow: hidden; }
-  .fill { height: 100%; width: 0%; background: linear-gradient(90deg,#1a9fff,#66c0f4); transition: width .4s ease; }
-  .pct { font-size: 28px; font-weight: 700; color: #fff; margin: 16px 0 4px; }
+  .fill { height: 100%; width: 0%; background: linear-gradient(90deg,#1a9fff,#66c0f4); transition: width .15s linear; }
+  .pct { font-size: 36px; font-weight: 700; color: #fff; margin: 16px 0 4px; font-variant-numeric: tabular-nums; }
   .msg { color: #8f98a0; font-size: 14px; min-height: 20px; }
   .err { color: #e06c75; font-size: 14px; margin-top: 14px; }
 </style>
@@ -206,7 +206,7 @@ ANALYZING_PAGE = """<!DOCTYPE html>
     <div class="brand">SteamSifter</div>
     <h1 id="title">Analyzing...</h1>
     <div class="track"><div id="fill" class="fill"></div></div>
-    <div id="pct" class="pct">0%</div>
+    <div id="pct" class="pct">0 / 1000</div>
     <div id="msg" class="msg">Starting...</div>
     <div id="err" class="err"></div>
   </div>
@@ -220,18 +220,40 @@ ANALYZING_PAGE = """<!DOCTYPE html>
   const pct = document.getElementById('pct');
   const msg = document.getElementById('msg');
 
-  function setBar(p, m) {
-    fill.style.width = p + '%';
-    pct.textContent = p + '%';
-    if (m) msg.textContent = m;
+  var target = 0;     // latest server-reported percent (0-100)
+  var shown = 0;      // smoothly animated value, so the counter never looks frozen
+  var done = false;
+  var hasError = false;
+
+  function redirect() {
+    window.location = '/analyze?appid=' + encodeURIComponent(appid) +
+      '&title=' + encodeURIComponent(title);
   }
+
+  // Always creep toward the target (and a little past while waiting) so the
+  // number out of 1000 keeps ticking, like a shader compiler.
+  function tick() {
+    if (hasError) return;
+    var ceil = done ? 100 : Math.min(target + 3, 98);
+    if (shown < ceil) {
+      shown += Math.max(0.05, (ceil - shown) * 0.045);
+      if (shown > ceil) shown = ceil;
+    }
+    pct.textContent = Math.floor(shown * 10) + ' / 1000';
+    fill.style.width = shown.toFixed(1) + '%';
+    if (done && shown >= 99.9) { redirect(); return; }
+    requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+
   function showError(e) {
+    hasError = true;
     document.getElementById('err').textContent =
       'Something went wrong: ' + e + '. Go back and try again.';
     msg.textContent = '';
   }
 
-  let jobId = null;
+  var jobId = null;
   fetch('/start?appid=' + encodeURIComponent(appid))
     .then(r => r.json())
     .then(d => { if (d.error) { showError(d.error); return; } jobId = d.job; poll(); })
@@ -242,13 +264,10 @@ ANALYZING_PAGE = """<!DOCTYPE html>
       .then(r => r.json())
       .then(d => {
         if (d.error) { showError(d.error); return; }
-        setBar(d.percent || 0, d.message);
-        if (d.done) {
-          window.location = '/analyze?appid=' + encodeURIComponent(appid) +
-            '&title=' + encodeURIComponent(title);
-        } else {
-          setTimeout(poll, 800);
-        }
+        target = d.percent || 0;
+        if (d.message) msg.textContent = d.message;
+        if (d.done) { target = 100; done = true; }
+        else { setTimeout(poll, 800); }
       })
       .catch(() => setTimeout(poll, 1500));
   }

@@ -26,6 +26,7 @@ from fetch_reviews import fetch_reviews, save_reviews
 from classify_batch import classify_all, save_classified
 from themes import analyze_both
 from report import build_html
+import store
 
 
 DATA_DIR = "data"
@@ -77,17 +78,13 @@ def get_analysis(app_id: str, max_reviews: int = 300, refresh: bool = False,
     paths = cache_paths(app_id)
     report = progress or (lambda pct, msg: None)
 
-    # ---- Cache check: reuse the analysis if it is fresh AND readable ----
-    if not refresh and is_fresh(paths["analysis"], max_age_days):
-        try:
-            with open(paths["analysis"], encoding="utf-8") as f:
-                analysis = json.load(f)
-            print(f"Cache HIT for app {app_id}. Reusing analysis from "
-                  f"{cache_age_days(paths['analysis']):.1f} day(s) ago. No API calls needed.")
+    # ---- Cache check: reuse the analysis from the store if fresh ----
+    if not refresh:
+        cached = store.load_analysis(app_id, max_age_days)
+        if cached is not None:
+            print(f"Cache HIT for app {app_id}. No API calls needed.")
             report(100, "Loaded from cache")
-            return analysis
-        except (json.JSONDecodeError, OSError) as err:
-            print(f"Cached analysis was unreadable ({err}); re-analyzing.")
+            return cached
 
     # ---- Rebuild ----
     reason = "refresh requested" if refresh else "no fresh/usable cache"
@@ -124,10 +121,8 @@ def get_analysis(app_id: str, max_reviews: int = 300, refresh: bool = False,
 
     report(100, "Done")
 
-    # Save the combined analysis (this IS the cache for next time).
-    os.makedirs(DATA_DIR, exist_ok=True)
-    with open(paths["analysis"], "w", encoding="utf-8") as f:
-        json.dump(analysis, f, ensure_ascii=False, indent=2)
+    # Persist the analysis (Redis if configured, else a local file).
+    store.save_analysis(app_id, analysis, max_age_days)
 
     return analysis
 

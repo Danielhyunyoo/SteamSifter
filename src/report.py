@@ -65,7 +65,7 @@ NAV_SEARCH_JS = """
         row.innerHTML = (g.image ? '<img src="' + g.image + '">' : '<img>') +
                         '<span>' + g.name + '</span>';
         row.onclick = function () {
-          window.location = '/analyze?appid=' + g.appid +
+          window.location = '/analyzing?appid=' + g.appid +
             '&title=' + encodeURIComponent(g.name);
         };
         box.appendChild(row);
@@ -208,7 +208,7 @@ def render_side(records: list, mode: str) -> str:
     return html_out
 
 
-def render_overview(neg: list, pos: list, sentiment_totals: dict, total_reviews: int) -> str:
+def render_overview(neg: list, pos: list, sentiment_totals: dict, total_reviews: int, noise_count: int = 0) -> str:
     """Overall sentiment bar + category distribution (across both sides)."""
     sent = {"positive": 0, "negative": 0, "neutral": 0}
     for k, v in (sentiment_totals or {}).items():
@@ -229,7 +229,8 @@ def render_overview(neg: list, pos: list, sentiment_totals: dict, total_reviews:
         if val:
             segments += f'<div class="seg" data-w="{pct:.1f}" style="width:0%;background:{SENTIMENT_COLORS[key]}"></div>'
         legend += (f'<span class="legend-item"><span class="dot" '
-                   f'style="background:{SENTIMENT_COLORS[key]}"></span>{key} {val}</span>')
+                   f'style="background:{SENTIMENT_COLORS[key]}"></span>{key} {pct:.0f}% '
+                   f'<span class="cat-count">({val})</span></span>')
 
     cat_rows = ""
     for category, c in sorted(cats.items(), key=lambda kv: kv[1], reverse=True):
@@ -239,17 +240,24 @@ def render_overview(neg: list, pos: list, sentiment_totals: dict, total_reviews:
             '<div class="cat-row">'
             f'<span class="cat-label">{esc(category)}</span>'
             f'<span class="cat-track"><span class="cat-fill" data-w="{pct:.1f}" style="width:0%;background:{color}"></span></span>'
-            f'<span class="cat-num">{c}</span>'
+            f'<span class="cat-num">{pct:.0f}% <span class="cat-count">({c})</span></span>'
             '</div>'
         )
+
+    filtered_line = ""
+    if noise_count:
+        npct = round(noise_count / total_reviews * 100) if total_reviews else 0
+        filtered_line = (f'<div class="ov-note">Filtered as low-signal noise: '
+                         f'<strong>{noise_count}</strong> reviews ({npct}% of all).</div>')
 
     return (
         '<div class="overview">'
         '<div class="ov-title">Sentiment</div>'
         f'<div class="sentiment-bar">{segments}</div>'
         f'<div class="legend">{legend}</div>'
-        '<div class="ov-title">By category</div>'
+        '<div class="ov-title">By category <span class="ov-sub">share of categorized reviews</span></div>'
         f'<div class="cat-list">{cat_rows}</div>'
+        f'{filtered_line}'
         '</div>'
     )
 
@@ -263,7 +271,7 @@ def build_html(analysis: dict, title: str) -> str:
     total_reviews = analysis.get("total_reviews", 0)
     generated = date.today().strftime("%B %d, %Y")
 
-    overview_html = render_overview(neg, pos, sentiment_totals, total_reviews)
+    overview_html = render_overview(neg, pos, sentiment_totals, total_reviews, noise.get("count", 0))
     fix_html = render_side(neg, "negative")
     love_html = render_side(pos, "positive")
 
@@ -356,6 +364,10 @@ def build_html(analysis: dict, title: str) -> str:
   .quote-link:hover {{ color: #66c0f4; text-decoration: underline; }}
   .source {{ display: inline-block; font-size: 11px; color: #66c0f4; text-decoration: none; margin-left: 2px; }}
   .source:hover {{ text-decoration: underline; }}
+  .ov-sub {{ font-weight: 400; text-transform: none; letter-spacing: 0; color: #8f98a0; font-size: 11px; }}
+  .ov-note {{ margin-top: 12px; font-size: 12px; color: #8f98a0; }}
+  .cat-count {{ color: #6b7785; font-weight: 400; }}
+  .cat-num {{ min-width: 70px; }}
 </style>
 </head>
 <body>

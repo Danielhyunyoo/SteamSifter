@@ -15,3 +15,5 @@ services:
         value: openai
       - key: OPENAI_API_KEY
         sync: false   # set this secret in the Render dashboard; never committed
+      - key: REDIS_URL
+        sync: false   # Upstash Redis connection URL, for the persistent cache

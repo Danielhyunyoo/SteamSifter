@@ -9,3 +9,4 @@ openai>=2.0.0           # OpenAI SDK (alternative AI provider)
 flask>=3.0.0           # web app framework (V3)
 gunicorn>=21.2.0       # production WSGI server (deployment)
 flask-limiter>=3.5.0   # per-visitor rate limiting (protect the API key)
+redis>=5.0.0           # persistent cache store (Upstash) on deploy
