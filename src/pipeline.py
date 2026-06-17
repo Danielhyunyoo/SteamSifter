@@ -26,7 +26,6 @@ from fetch_reviews import fetch_reviews, save_reviews, fetch_review_total
 from classify_batch import classify_all, save_classified
 from themes import analyze_both
 from report import build_html
-from fetch_news import fetch_patches
 import store
 
 
@@ -119,13 +118,6 @@ def get_analysis(app_id: str, max_reviews: int = 300, refresh: bool = False,
 
     # Attach each example review's Steam permalink so users can verify it is real.
     _attach_review_urls(analysis, app_id)
-
-    # Recent Steam updates, for patch markers on the trend chart (best-effort).
-    try:
-        analysis["patches"] = fetch_patches(app_id)
-    except Exception as err:
-        print(f"News fetch failed ({err}); continuing without patch markers.")
-        analysis["patches"] = []
 
     # Record the game's true total review count, for the review-growth refresh gate.
     analysis["steam_total_reviews"] = fetch_review_total(app_id) or analysis.get("total_reviews", 0)
