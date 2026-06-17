@@ -144,10 +144,9 @@ def render_refresh(state: dict) -> str:
         return (f'<a class="refresh" href="{href}" '
                 'title="Run a fresh analysis with the latest reviews">'
                 'Re-analyze &#8635;</a>')
-    wait = state.get("wait_hours", 0)
-    return ('<span class="refresh disabled" title="This report was updated '
-            'recently; a fresh run is available later">'
-            f'Re-analyze available in ~{wait}h</span>')
+    needed = state.get("reviews_needed", 0)
+    return ('<span class="refresh disabled" title="Unlocks once the game gains '
+            f'more reviews">Re-analyze after {needed:,} more reviews</span>')
 
 
 def render_example(example: dict) -> str:

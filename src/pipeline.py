@@ -22,7 +22,7 @@ import os
 import time
 
 from llm import get_client
-from fetch_reviews import fetch_reviews, save_reviews
+from fetch_reviews import fetch_reviews, save_reviews, fetch_review_total
 from classify_batch import classify_all, save_classified
 from themes import analyze_both
 from report import build_html
@@ -126,6 +126,9 @@ def get_analysis(app_id: str, max_reviews: int = 300, refresh: bool = False,
     except Exception as err:
         print(f"News fetch failed ({err}); continuing without patch markers.")
         analysis["patches"] = []
+
+    # Record the game's true total review count, for the review-growth refresh gate.
+    analysis["steam_total_reviews"] = fetch_review_total(app_id) or analysis.get("total_reviews", 0)
 
     report(100, "Done")
 

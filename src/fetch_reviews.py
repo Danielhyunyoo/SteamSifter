@@ -182,6 +182,36 @@ def fetch_reviews(
 
 
 # ----------------------------------------------------------------------------
+# Total count: how many reviews the game has right now (for the refresh gate)
+# ----------------------------------------------------------------------------
+
+def fetch_review_total(app_id: str, language: str = "english") -> int:
+    """
+    Return the game's current total review count for our filter, or None on
+    failure. Uses Steam's query_summary, which comes back on the first page, so
+    num_per_page=0 makes this a tiny, single request.
+    """
+    url = STEAM_REVIEWS_URL.format(app_id=app_id)
+    params = {
+        "json": 1,
+        "language": language,
+        "review_type": "all",
+        "purchase_type": "all",
+        "num_per_page": 0,
+    }
+    try:
+        resp = requests.get(url, params=params, headers=HEADERS, timeout=REQUEST_TIMEOUT)
+        resp.raise_for_status()
+        payload = resp.json()
+        if payload.get("success") != 1:
+            return None
+        total = int(payload.get("query_summary", {}).get("total_reviews", 0))
+        return total or None
+    except (requests.RequestException, ValueError, TypeError):
+        return None
+
+
+# ----------------------------------------------------------------------------
 # Saving: write the cleaned reviews to data/ as JSON
 # ----------------------------------------------------------------------------
 

@@ -40,6 +40,29 @@ def _redis_client():
     return _redis
 
 
+def cache_get_int(key):
+    """Read a small integer from Redis (used to soft-cache live review counts)."""
+    r = _redis_client()
+    if r is None:
+        return None
+    try:
+        v = r.get(key)
+        return int(v) if v is not None else None
+    except (ValueError, TypeError, Exception):
+        return None
+
+
+def cache_set_int(key, value, ttl):
+    """Write a small integer to Redis with a TTL. No-op without Redis."""
+    r = _redis_client()
+    if r is None:
+        return
+    try:
+        r.set(key, int(value), ex=int(ttl))
+    except Exception:
+        pass
+
+
 def load_analysis(app_id, max_age_days):
     """Return the cached analysis dict if present and fresh, otherwise None."""
     r = _redis_client()

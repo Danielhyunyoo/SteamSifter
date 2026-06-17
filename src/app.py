@@ -13,6 +13,7 @@ Run it:
 Then open http://127.0.0.1:5000 in your browser.
 """
 
+import math
 import os
 import threading
 import time
@@ -26,6 +27,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 
 from search import search_games
 from pipeline import get_analysis, DEFAULT_MAX_AGE_DAYS
+from fetch_reviews import fetch_review_total
 from report import build_html
 import store
 
@@ -39,9 +41,10 @@ app.secret_key = os.environ.get("SECRET_KEY") or os.urandom(24).hex()
 # Owner-only password. When unset, the admin bypass is simply disabled.
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
 
-# A normal visitor can only force a re-analysis once the cached report is older
-# than this. The owner (admin) bypasses it entirely.
-REFRESH_COOLDOWN_SECONDS = 24 * 3600
+# A normal visitor can only force a re-analysis once the game has gained this
+# fraction of new reviews since the cached run (0.20 = 20% more). The owner
+# (admin) bypasses it entirely.
+REFRESH_GROWTH = 0.20
 
 # Behind a host's proxy (e.g. Render), trust X-Forwarded-* so the rate limiter
 # sees real client IPs rather than the proxy's.
@@ -58,24 +61,40 @@ def is_admin() -> bool:
     return bool(session.get("admin"))
 
 
+def current_review_total(appid):
+    """The game's current total review count, soft-cached for 10 min to spare Steam."""
+    key = f"revtotal:{appid}"
+    cached = store.cache_get_int(key)
+    if cached is not None:
+        return cached
+    total = fetch_review_total(appid)
+    if total:
+        store.cache_set_int(key, total, 600)
+    return total
+
+
 def refresh_status(appid):
     """
     Decide whether a force-refresh is allowed for this game right now.
 
-    Returns (allowed: bool, wait_seconds: int). Admins are always allowed.
-    Other visitors must wait until the cached report is older than the cooldown.
+    Returns (allowed: bool, reviews_needed: int). Admins are always allowed.
+    Other visitors must wait until the game has gained REFRESH_GROWTH more reviews
+    (e.g. 20%) since the cached run. Degrades open if the count is unknown, so a
+    transient Steam hiccup never hard-blocks (the rate limit still applies).
     """
     if is_admin():
         return True, 0
     cached = store.load_analysis(appid, DEFAULT_MAX_AGE_DAYS)
-    stamped = (cached or {}).get("cached_at")
-    if not stamped:
-        # No fresh cache (or a pre-stamp entry): nothing recent to protect.
+    baseline = (cached or {}).get("steam_total_reviews")
+    if not baseline:
+        return True, 0   # old cache or unknown baseline: nothing to gate on
+    current = current_review_total(appid)
+    if not current:
+        return True, 0   # can't check right now: do not hard-block
+    threshold = math.ceil(baseline * (1 + REFRESH_GROWTH))
+    if current >= threshold:
         return True, 0
-    remaining = REFRESH_COOLDOWN_SECONDS - (time.time() - stamped)
-    if remaining <= 0:
-        return True, 0
-    return False, int(remaining)
+    return False, threshold - current
 
 
 # The home page. Plain string (not an f-string) so the JS braces are safe.
@@ -199,12 +218,12 @@ def analyze():
 
     # Tell the report whether a force-refresh is available right now, so the
     # button renders enabled, on cooldown, or in admin mode.
-    allowed, wait = refresh_status(appid)
+    allowed, needed = refresh_status(appid)
     refresh_state = {
         "appid": appid,
         "title": title,
         "allowed": allowed,
-        "wait_hours": max(1, round(wait / 3600)) if wait else 0,
+        "reviews_needed": needed,
         "admin": is_admin(),
     }
     return Response(build_html(analysis, title, refresh_state), mimetype="text/html")
@@ -415,11 +434,10 @@ def refresh():
     appid = request.args.get("appid")
     if not appid:
         return jsonify({"error": "missing appid"}), 400
-    allowed, wait = refresh_status(appid)
+    allowed, needed = refresh_status(appid)
     if not allowed:
-        hours = max(1, round(wait / 3600))
-        return jsonify({"error": f"This report was updated recently. A fresh "
-                                 f"re-analysis is available in about {hours}h."}), 429
+        return jsonify({"error": f"Not enough new reviews yet. About {needed:,} more "
+                                 "reviews are needed before this can be re-analyzed."}), 429
     return jsonify({"job": _begin_job(appid, refresh=True)})
 
 
