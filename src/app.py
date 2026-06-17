@@ -128,6 +128,13 @@ HOME_PAGE = """<!DOCTYPE html>
   .footer-links a:hover { color: #66c0f4; }
   .footer-links svg { width: 20px; height: 20px; fill: currentColor; display: block; }
   .disclaimer { margin: 12px auto 0; color: #5a6675; font-size: 11px; line-height: 1.5; max-width: 640px; }
+  @media (max-width: 640px) {
+    h1 { font-size: 27px; }
+    .hero { padding: 20px 16px; }
+    input[type=text] { font-size: 16px; padding: 12px 14px; }
+    .site-footer { padding: 16px; }
+    .footer-links { gap: 14px; }
+  }
 </style>
 </head>
 <body>
@@ -470,6 +477,12 @@ ABOUT_PAGE = """<!DOCTYPE html>
   p, li { color: #c7d5e0; font-size: 14px; line-height: 1.6; }
   ul, ol { padding-left: 20px; }
   .note { background: #16202d; border: 1px solid #2a3a4d; border-left: 3px solid #66c0f4; border-radius: 4px; padding: 12px 14px; color: #8f98a0; font-size: 13px; }
+  @media (max-width: 640px) {
+    header { padding: 16px 18px; }
+    main { padding: 22px 16px 48px; }
+    h1 { font-size: 24px; }
+    .profiles { gap: 12px; }
+  }
 </style>
 </head>
 <body>

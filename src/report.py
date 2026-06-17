@@ -463,6 +463,7 @@ CHARTS_JS = """
   var data;
   try { data = JSON.parse(el.textContent); } catch (e) { return; }
 
+  var narrow = window.innerWidth < 640;   // stack legends/titles on small screens
   Chart.defaults.color = '#8f98a0';
   Chart.defaults.font.family = '-apple-system, Segoe UI, Roboto, sans-serif';
 
@@ -477,7 +478,7 @@ CHARTS_JS = """
       options: {
         responsive: true, maintainAspectRatio: false, cutout: '62%',
         plugins: {
-          legend: { position: 'right', labels: { boxWidth: 12, padding: 10 } },
+          legend: { position: narrow ? 'bottom' : 'right', labels: { boxWidth: 12, padding: 10 } },
           tooltip: { callbacks: { label: function (c) {
             var total = c.dataset.data.reduce(function (a, b) { return a + b; }, 0);
             var pct = total ? Math.round(c.parsed / total * 100) : 0;
@@ -541,9 +542,9 @@ CHARTS_JS = """
         scales: {
           x: { grid: { color: '#233040' } },
           y: { grid: { color: '#233040' }, beginAtZero: true, ticks: { precision: 0 },
-               title: { display: true, text: 'by sentiment' } },
+               title: { display: !narrow, text: 'by sentiment' } },
           yVol: { position: 'right', grid: { display: false }, beginAtZero: true,
-                  ticks: { precision: 0 }, title: { display: true, text: 'total reviews' } }
+                  ticks: { precision: 0 }, title: { display: !narrow, text: 'total reviews' } }
         },
         plugins: {
           legend: { labels: { boxWidth: 12, padding: 12 } },
@@ -750,6 +751,26 @@ def build_html(analysis: dict, title: str, refresh_state: dict = None) -> str:
   .patch-list .pdate {{ color: #8f98a0; min-width: 58px; flex: none; }}
   .patch-list a {{ color: #66c0f4; text-decoration: none; }}
   .patch-list a:hover {{ text-decoration: underline; }}
+  @media (max-width: 640px) {{
+    header {{ padding: 16px 18px; }}
+    .titlerow {{ flex-direction: column; align-items: stretch; gap: 12px; }}
+    header h1 {{ font-size: 22px; }}
+    .navsearch {{ max-width: none; }}
+    main {{ padding: 20px 14px 48px; }}
+    h2 {{ font-size: 16px; }}
+    .toggle-bar {{ display: flex; width: 100%; }}
+    .toggle-btn {{ min-width: 0; flex: 1 1 0; padding: 8px 10px; }}
+    .scoreboard {{ gap: 8px; }}
+    .stat {{ flex: 1 1 calc(50% - 8px); padding: 10px 12px; gap: 9px; }}
+    .stat svg {{ width: 20px; height: 20px; }}
+    .stat-value {{ font-size: 18px; }}
+    .donut-wrap {{ height: 300px; }}
+    .trend-wrap {{ height: 300px; padding: 10px; }}
+    .card {{ padding: 14px; }}
+    .impact-chip {{ margin-left: 0; }}
+    .refresh {{ display: block; text-align: center; }}
+    .patch-list .pdate {{ min-width: 50px; }}
+  }}
 </style>
 </head>
 <body>
