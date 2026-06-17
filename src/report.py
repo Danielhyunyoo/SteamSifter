@@ -252,13 +252,13 @@ def render_side(records: list, mode: str) -> str:
     elif mode == "positive":
         features = [t for t in real if t.get("kind", "feature") != "emotional"]
         emotional = [t for t in real if t.get("kind") == "emotional"]
-        html_out = _section("Double Down - ranked by impact (playtime + helpful votes)",
+        html_out = _section("Praise - ranked by impact (playtime + helpful votes)",
                             features, max_impact)
         if emotional:
             html_out += _section("Player sentiment - emotional, not directly actionable",
                                  emotional, max_impact)
     else:
-        html_out = _section("Fix These - ranked by impact (playtime + helpful votes)",
+        html_out = _section("Issues - ranked by impact (playtime + helpful votes)",
                             real, max_impact)
 
     if unclear and unclear.get("count"):
@@ -395,6 +395,63 @@ def trend_labels(timeline: dict) -> list:
     return out
 
 
+def build_patch_markers(patches: list, timeline: dict) -> list:
+    """
+    Map patch dates onto the trend's category buckets so they can be drawn as
+    vertical markers. Patches outside the chart's date span are dropped; patches
+    landing in the same bucket are merged. Returns at most 8 markers, oldest
+    first. Each marker: {"x", "label", "titles": [...], "url"}.
+    """
+    import calendar
+    from datetime import datetime, timezone, date as _date
+
+    pts = timeline.get("points", [])
+    if not patches or len(pts) < 2:
+        return []
+    gran = timeline.get("granularity", "day")
+    keys = [p["label"] for p in pts]                 # YYYY-MM-DD or YYYY-MM
+    label_for_key = dict(zip(keys, trend_labels(timeline)))
+
+    def key_start(k):
+        parts = [int(x) for x in k.split("-")]
+        return _date(parts[0], parts[1], parts[2] if len(parts) > 2 else 1)
+
+    def key_end(k):
+        parts = [int(x) for x in k.split("-")]
+        if len(parts) > 2:
+            return _date(parts[0], parts[1], parts[2])
+        return _date(parts[0], parts[1], calendar.monthrange(parts[0], parts[1])[1])
+
+    span_lo, span_hi = key_start(keys[0]), key_end(keys[-1])
+
+    merged = {}
+    for patch in patches:
+        ts = patch.get("date", 0)
+        if not ts:
+            continue
+        d = datetime.fromtimestamp(ts, tz=timezone.utc).date()
+        if d < span_lo or d > span_hi:
+            continue
+        key = d.strftime("%Y-%m") if gran == "month" else d.strftime("%Y-%m-%d")
+        if key not in label_for_key:
+            # Snap to the nearest existing bucket by date.
+            key = min(keys, key=lambda k: abs((key_start(k) - d).days))
+        slot = merged.setdefault(key, {"titles": [], "url": patch.get("url", "")})
+        if patch.get("title"):
+            slot["titles"].append(patch["title"])
+
+    markers = []
+    for key in sorted(merged):
+        slot = merged[key]
+        markers.append({
+            "x": label_for_key.get(key, key),
+            "label": label_for_key.get(key, key),
+            "titles": slot["titles"][:3],
+            "url": slot["url"],
+        })
+    return markers[-8:]
+
+
 # Chart.js (pinned) and the chart setup script (plain string: JS braces are safe).
 CHARTJS_CDN = ('<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/'
                '4.4.1/chart.umd.min.js"></script>')
@@ -432,30 +489,69 @@ CHARTS_JS = """
     });
   }
 
-  // Sentiment over time.
+  // Sentiment over time (with review volume + Steam patch markers).
   var t = data.trend, tc = document.getElementById('trendChart');
   if (tc && t && t.labels.length > 1) {
     var mk = function (label, color, arr) {
       return { label: label, data: arr, borderColor: color,
                backgroundColor: color + '33', fill: true, tension: 0.3,
-               pointRadius: 2, borderWidth: 2 };
+               pointRadius: 2, borderWidth: 2, yAxisID: 'y', order: 0 };
+    };
+    var datasets = [
+      mk('Positive', '#98c379', t.positive),
+      mk('Negative', '#e06c75', t.negative),
+      mk('Neutral', '#abb2bf', t.neutral)
+    ];
+    if (t.volume && t.volume.length) {
+      datasets.push({ type: 'bar', label: 'Reviews', data: t.volume,
+        backgroundColor: 'rgba(102,192,244,0.16)', borderWidth: 0,
+        yAxisID: 'yVol', order: 5 });
+    }
+    // Custom plugin: dashed vertical lines + numbered flags at patch dates.
+    var patchMarkers = {
+      id: 'patchMarkers',
+      afterDatasetsDraw: function (chart, a, opts) {
+        var list = (opts && opts.list) || [];
+        if (!list.length) return;
+        var ctx = chart.ctx, xs = chart.scales.x;
+        var top = chart.chartArea.top, bottom = chart.chartArea.bottom;
+        ctx.save();
+        list.forEach(function (m, i) {
+          var x = xs.getPixelForValue(m.x);
+          if (isNaN(x)) return;
+          ctx.beginPath(); ctx.setLineDash([4, 4]);
+          ctx.strokeStyle = '#e5c07b'; ctx.lineWidth = 1.5;
+          ctx.moveTo(x, top); ctx.lineTo(x, bottom); ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.beginPath(); ctx.arc(x, top + 1, 8, 0, Math.PI * 2);
+          ctx.fillStyle = '#e5c07b'; ctx.fill();
+          ctx.fillStyle = '#1b2838'; ctx.font = 'bold 10px sans-serif';
+          ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.fillText(String(i + 1), x, top + 1);
+        });
+        ctx.restore();
+      }
     };
     new Chart(tc, {
       type: 'line',
-      data: { labels: t.labels, datasets: [
-        mk('Positive', '#98c379', t.positive),
-        mk('Negative', '#e06c75', t.negative),
-        mk('Neutral', '#abb2bf', t.neutral)
-      ] },
+      data: { labels: t.labels, datasets: datasets },
       options: {
         responsive: true, maintainAspectRatio: false,
         interaction: { mode: 'index', intersect: false },
+        layout: { padding: { top: 12 } },
         scales: {
           x: { grid: { color: '#233040' } },
-          y: { grid: { color: '#233040' }, beginAtZero: true, ticks: { precision: 0 } }
+          y: { grid: { color: '#233040' }, beginAtZero: true, ticks: { precision: 0 },
+               title: { display: true, text: 'by sentiment' } },
+          yVol: { position: 'right', grid: { display: false }, beginAtZero: true,
+                  ticks: { precision: 0 }, title: { display: true, text: 'total reviews' } }
         },
-        plugins: { legend: { labels: { boxWidth: 12, padding: 12 } } }
-      }
+        plugins: {
+          legend: { labels: { boxWidth: 12, padding: 12 } },
+          patchMarkers: { list: t.markers || [] }
+        }
+      },
+      plugins: [patchMarkers]
     });
   }
 })();
@@ -484,11 +580,14 @@ def build_html(analysis: dict, title: str, refresh_state: dict = None) -> str:
     }
     timeline = analysis.get("sentiment_timeline") or {}
     pts = timeline.get("points", [])
+    markers = build_patch_markers(analysis.get("patches", []), timeline)
     trend = {
         "labels": trend_labels(timeline),
         "positive": [p.get("positive", 0) for p in pts],
         "negative": [p.get("negative", 0) for p in pts],
         "neutral": [p.get("neutral", 0) for p in pts],
+        "volume": [p.get("positive", 0) + p.get("negative", 0) + p.get("neutral", 0) for p in pts],
+        "markers": markers,
     }
     # Escape "</" so a theme name can never break out of the <script> tag.
     chartdata_json = json.dumps({"donut": donut, "trend": trend},
@@ -498,11 +597,25 @@ def build_html(analysis: dict, title: str, refresh_state: dict = None) -> str:
     trend_section = ""
     if len(pts) > 1:
         grouping = "by month" if timeline.get("granularity") == "month" else "by day"
+        marker_note = " Gold markers flag Steam updates." if markers else ""
+        patch_legend = ""
+        if markers:
+            rows = ""
+            for i, mk in enumerate(markers, 1):
+                titles = esc("; ".join(mk["titles"]) or "Update")
+                if mk.get("url"):
+                    link = f'<a href="{esc(mk["url"])}" target="_blank" rel="noopener">{titles}</a>'
+                else:
+                    link = titles
+                rows += (f'<li><span class="pnum">{i}</span>'
+                         f'<span class="pdate">{esc(mk["label"])}</span>{link}</li>')
+            patch_legend = f'<ol class="patch-list">{rows}</ol>'
         trend_section = (
             '<h2>Sentiment over time</h2>'
             f'<div class="trend-sub">Sentiment of the {total_reviews} most recent reviews, '
-            f'grouped {grouping}.</div>'
+            f'grouped {grouping}.{marker_note}</div>'
             '<div class="trend-wrap"><canvas id="trendChart"></canvas></div>'
+            f'{patch_legend}'
         )
     fix_html = render_side(neg, "negative")
     love_html = render_side(pos, "positive")
@@ -632,6 +745,12 @@ def build_html(analysis: dict, title: str, refresh_state: dict = None) -> str:
   .donut-wrap {{ position: relative; height: 240px; margin: 6px 0 2px; }}
   .trend-wrap {{ position: relative; height: 270px; background: #16202d; border: 1px solid #2a3a4d; border-radius: 6px; padding: 12px; }}
   .trend-sub {{ font-size: 12px; color: #8f98a0; margin: 2px 0 10px; }}
+  .patch-list {{ list-style: none; margin: 12px 0 0; padding: 0; font-size: 12px; color: #acb2b8; }}
+  .patch-list li {{ display: flex; align-items: baseline; gap: 8px; padding: 3px 0; }}
+  .patch-list .pnum {{ flex: none; width: 18px; height: 18px; border-radius: 50%; background: #e5c07b; color: #1b2838; font-weight: 700; font-size: 11px; text-align: center; line-height: 18px; }}
+  .patch-list .pdate {{ color: #8f98a0; min-width: 58px; flex: none; }}
+  .patch-list a {{ color: #66c0f4; text-decoration: none; }}
+  .patch-list a:hover {{ text-decoration: underline; }}
 </style>
 </head>
 <body>
@@ -643,8 +762,8 @@ def build_html(analysis: dict, title: str, refresh_state: dict = None) -> str:
     {trend_section}
     <div class="toggle-bar">
       <div class="toggle-slider" id="toggle-slider"></div>
-      <button id="btn-fix" class="toggle-btn active" onclick="showSide('fix')">Fix These</button>
-      <button id="btn-love" class="toggle-btn" onclick="showSide('love')">Double Down</button>
+      <button id="btn-fix" class="toggle-btn active" onclick="showSide('fix')">Issues</button>
+      <button id="btn-love" class="toggle-btn" onclick="showSide('love')">Praise</button>
     </div>
     <div class="impact-help">Themes are ranked by <strong>impact</strong>: how many reviews raised each one, weighted by the reviewer's playtime and helpful votes. A few experienced, upvoted players outweigh many drive-by reviews. The bar and the High/Med/Low chip are relative to the top theme on each side.</div>
     <div id="side-fix">{fix_html}</div>
