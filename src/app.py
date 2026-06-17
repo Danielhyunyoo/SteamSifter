@@ -313,6 +313,54 @@ ANALYZING_PAGE = """<!DOCTYPE html>
     msg.textContent = '';
   }
 
+
+  // --- Completion chime: a soft two-note ping (Web Audio, no asset needed). ---
+  // Lets a user who tabbed away hear when their report is ready.
+  var audioCtx = null;
+  var dinged = false;
+  function getCtx() {
+    if (!audioCtx) {
+      try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
+      catch (e) { audioCtx = null; }
+    }
+    return audioCtx;
+  }
+  // Resume audio on any interaction, for browsers that gate sound behind a gesture.
+  ['pointerdown', 'keydown'].forEach(function (ev) {
+    window.addEventListener(ev, function () {
+      var c = getCtx();
+      if (c && c.state === 'suspended') c.resume();
+    });
+  });
+  function playDing() {
+    var c = getCtx();
+    if (!c) return;
+    if (c.state === 'suspended') { c.resume().catch(function () {}); }
+    var now = c.currentTime;
+    // Two gentle sine notes (A5 then E6) with soft envelopes and low volume.
+    [[880, 0.0], [1318.5, 0.16]].forEach(function (pair) {
+      var osc = c.createOscillator();
+      var gain = c.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = pair[0];
+      var t = now + pair[1];
+      gain.gain.setValueAtTime(0.0001, t);
+      gain.gain.exponentialRampToValueAtTime(0.14, t + 0.02);    // soft attack
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.33);  // gentle decay
+      osc.connect(gain);
+      gain.connect(c.destination);
+      osc.start(t);
+      osc.stop(t + 0.38);
+    });
+  }
+  function notifyDone() {
+    if (dinged) return;
+    dinged = true;
+    playDing();
+    // Visual cue for a tabbed-away user: change the tab title.
+    document.title = 'Report ready | SteamSifter';
+  }
+
   var jobId = null;
   var startUrl = (force ? '/refresh' : '/start') + '?appid=' + encodeURIComponent(appid);
   fetch(startUrl)
@@ -327,7 +375,10 @@ ANALYZING_PAGE = """<!DOCTYPE html>
         if (d.error) { showError(d.error); return; }
         target = d.percent || 0;
         if (d.message) msg.textContent = d.message;
-        if (d.done) { target = 100; done = true; }
+        if (d.done) {
+          target = 100;
+          if (!done) { done = true; notifyDone(); }   // fire the chime once
+        }
         else { setTimeout(poll, 800); }
       })
       .catch(() => setTimeout(poll, 1500));
