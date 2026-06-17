@@ -38,6 +38,15 @@ SENTIMENT_COLORS = {"positive": "#98c379", "negative": "#e06c75", "neutral": "#a
 UNCLEAR_LABEL = "unclear"   # constructive reviews that matched no theme
 NOISE_LABEL = "noise"       # reviews filtered out as low-signal
 
+# Steam-style thumb icon (points up). The "down" variant reuses it rotated.
+THUMB_SVG = (
+    '<svg viewBox="0 0 24 24" width="11" height="11" fill="currentColor" '
+    'aria-hidden="true"><path d="M2 21h4V9H2v12zM23 10c0-1.1-.9-2-2-2h-6.31'
+    'l.95-4.57.03-.32a1.5 1.5 0 0 0-.44-1.06L14.17 1 7.59 7.59C7.22 7.95 7 '
+    '8.45 7 9v10a2 2 0 0 0 2 2h9c.83 0 1.54-.5 1.84-1.22l3.02-7.05c.09-.23'
+    '.14-.47.14-.73v-2z"/></svg>'
+)
+
 
 # Header live-search script (plain string so its JS braces need no escaping).
 NAV_SEARCH_JS = """
@@ -124,6 +133,17 @@ def render_example(example: dict) -> str:
     hours = example.get("playtime_at_review_hours", 0)
     helpful = example.get("helpful_votes", 0)
     url = example.get("url")
+    voted = example.get("voted_up")
+
+    # Steam recommend / not-recommend badge, only when we know the flag
+    # (older cached analyses may not carry it).
+    if voted is True:
+        thumb = f'<span class="badge thumb up">{THUMB_SVG} Recommended</span>'
+    elif voted is False:
+        thumb = (f'<span class="badge thumb down">'
+                 f'<span class="thumb-dn">{THUMB_SVG}</span> Not recommended</span>')
+    else:
+        thumb = ''
 
     if url:
         quote_html = (f'<a class="quote quote-link" href="{esc(url)}" target="_blank" '
@@ -138,12 +158,22 @@ def render_example(example: dict) -> str:
         '<div class="example">'
         f'{quote_html}'
         '<span class="badges">'
+        f'{thumb}'
         f'<span class="badge">{hours:g}h played</span>'
         f'<span class="badge">{helpful} helpful</span>'
         f'{source}'
         '</span>'
         '</div>'
     )
+
+
+def impact_level(width: int) -> str:
+    """Map a bar width (0-100, impact relative to the top theme) to a tier."""
+    if width >= 66:
+        return "high"
+    if width >= 33:
+        return "med"
+    return "low"
 
 
 def render_theme_card(rank: int, theme: dict, max_impact: float) -> str:
@@ -155,6 +185,11 @@ def render_theme_card(rank: int, theme: dict, max_impact: float) -> str:
     impact = theme.get("impact_score", 0)
     description = esc(theme.get("description", ""))
     width = int((impact / max_impact) * 100) if max_impact else 0
+    level = impact_level(width)                 # high / med / low vs the top theme
+    level_label = {"high": "High", "med": "Med", "low": "Low"}[level]
+    impact_title = (f"Impact score {impact:g}: review count weighted by each "
+                    "reviewer's playtime and helpful votes, shown relative to the "
+                    "top theme on this side.")
     examples_html = "".join(render_example(e) for e in theme.get("examples", []))
     return (
         '<div class="card">'
@@ -162,7 +197,9 @@ def render_theme_card(rank: int, theme: dict, max_impact: float) -> str:
         f'<span class="rank">#{rank}</span>'
         f'<span class="theme-name">{name}</span>'
         f'<span class="pill" style="background:{color}">{esc(category)}</span>'
-        f'<span class="count">{count} reviews &middot; impact {impact:g}</span>'
+        f'<span class="count">{count} reviews</span>'
+        f'<span class="impact-chip impact-{level}" title="{esc(impact_title)}">'
+        f'{level_label} impact</span>'
         '</div>'
         f'<div class="bar-track"><div class="bar-fill" data-w="{width}" style="width:0%;background:{color}"></div></div>'
         f'<p class="description">{description}</p>'
@@ -368,6 +405,16 @@ def build_html(analysis: dict, title: str) -> str:
   .ov-note {{ margin-top: 12px; font-size: 12px; color: #8f98a0; }}
   .cat-count {{ color: #6b7785; font-weight: 400; }}
   .cat-num {{ min-width: 70px; }}
+  .impact-help {{ font-size: 12px; color: #8f98a0; max-width: 680px; margin: 2px 0 16px; line-height: 1.5; }}
+  .impact-chip {{ font-size: 11px; font-weight: 700; padding: 2px 9px; border-radius: 3px; margin-left: 8px; cursor: help; white-space: nowrap; }}
+  .impact-high {{ background: #66c0f4; color: #0e1620; }}
+  .impact-med {{ background: #39698a; color: #dfeaf2; }}
+  .impact-low {{ background: #2a3f5a; color: #9fb0c0; }}
+  .thumb {{ display: inline-flex; align-items: center; gap: 4px; }}
+  .thumb.up {{ background: #1a3a2a; color: #a4d4a2; }}
+  .thumb.down {{ background: #3a1f24; color: #e08f96; }}
+  .thumb svg {{ display: inline-block; }}
+  .thumb-dn svg {{ transform: rotate(180deg); }}
 </style>
 </head>
 <body>
@@ -380,6 +427,7 @@ def build_html(analysis: dict, title: str) -> str:
       <button id="btn-fix" class="toggle-btn active" onclick="showSide('fix')">Fix These</button>
       <button id="btn-love" class="toggle-btn" onclick="showSide('love')">Double Down</button>
     </div>
+    <div class="impact-help">Themes are ranked by <strong>impact</strong>: how many reviews raised each one, weighted by the reviewer's playtime and helpful votes. A few experienced, upvoted players outweigh many drive-by reviews. The bar and the High/Med/Low chip are relative to the top theme on each side.</div>
     <div id="side-fix">{fix_html}</div>
     <div id="side-love" style="display:none">{love_html}</div>
     <h2>Low-signal reviews</h2>

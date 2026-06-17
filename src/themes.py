@@ -257,6 +257,7 @@ def aggregate_themes(reviews: list, themes: list) -> list:
                 "helpful_votes": r.get("helpful_votes", 0),
                 "playtime_at_review_hours": r.get("playtime_at_review_hours", 0),
                 "steamid": r.get("steamid"),
+                "voted_up": r.get("voted_up"),
             }
             for r in items_sorted[:EXAMPLES_PER_THEME]
         ]
@@ -322,6 +323,7 @@ def analyze_reviews(client, all_reviews: list):
                     "helpful_votes": r.get("helpful_votes", 0),
                     "playtime_at_review_hours": r.get("playtime_at_review_hours", 0),
                     "steamid": r.get("steamid"),
+                    "voted_up": r.get("voted_up"),
                 }
                 for r in noise_sorted[:EXAMPLES_PER_THEME]
             ],
@@ -379,6 +381,7 @@ def analyze_both(client, classified: list, on_progress=None) -> dict:
                 "helpful_votes": r.get("helpful_votes", 0),
                 "playtime_at_review_hours": r.get("playtime_at_review_hours", 0),
                 "steamid": r.get("steamid"),
+                "voted_up": r.get("voted_up"),
             }
             for r in noise_sorted[:EXAMPLES_PER_THEME]
         ],
