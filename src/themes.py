@@ -224,6 +224,45 @@ def _count_sentiments(reviews: list) -> dict:
     return counts
 
 
+def build_sentiment_timeline(classified: list) -> dict:
+    """
+    Bucket classified reviews by date into a sentiment-over-time series.
+
+    Granularity adapts to the data's span: daily for short spans, monthly for
+    long ones, so the trend reads well for both busy and niche games.
+
+    Returns:
+        {"granularity": "day"|"month",
+         "points": [{"label", "positive", "negative", "neutral"}, ...]}
+        ordered chronologically. Empty points if there is too little dated data.
+    """
+    from datetime import date as _date
+
+    dated = [r for r in classified if r.get("created_date")]
+    if len(dated) < 4:
+        return {"granularity": "day", "points": []}
+
+    # created_date is "YYYY-MM-DD"; the span decides the bucket size.
+    days = sorted(r["created_date"] for r in dated)
+    try:
+        span_days = (_date.fromisoformat(days[-1]) - _date.fromisoformat(days[0])).days
+    except ValueError:
+        span_days = 0
+    by_month = span_days > 45   # short spans stay daily; longer ones go monthly
+
+    buckets = {}
+    for r in dated:
+        key = r["created_date"][:7] if by_month else r["created_date"]
+        bucket = buckets.setdefault(key, {"positive": 0, "negative": 0, "neutral": 0})
+        sentiment = r.get("sentiment", "neutral")
+        if sentiment not in bucket:
+            sentiment = "neutral"
+        bucket[sentiment] += 1
+
+    points = [dict(label=k, **buckets[k]) for k in sorted(buckets)]
+    return {"granularity": "month" if by_month else "day", "points": points}
+
+
 def aggregate_themes(reviews: list, themes: list) -> list:
     """
     Build the final theme records: count, impact score, and example quotes.
@@ -392,6 +431,7 @@ def analyze_both(client, classified: list, on_progress=None) -> dict:
         "positive": positive_records,
         "noise": noise_summary,
         "sentiment_totals": _count_sentiments(classified),
+        "sentiment_timeline": build_sentiment_timeline(classified),
         "total_reviews": len(classified),
     }
 

@@ -269,19 +269,12 @@ def render_side(records: list, mode: str) -> str:
     return html_out
 
 
-def render_overview(neg: list, pos: list, sentiment_totals: dict, total_reviews: int, noise_count: int = 0) -> str:
-    """Overall sentiment bar + category distribution (across both sides)."""
+def render_overview(sentiment_totals: dict, total_reviews: int, noise_count: int = 0) -> str:
+    """Overall sentiment bar plus a category donut (drawn by Chart.js)."""
     sent = {"positive": 0, "negative": 0, "neutral": 0}
     for k, v in (sentiment_totals or {}).items():
         sent[k] = sent.get(k, 0) + v
     sent_total = sum(sent.values())
-
-    cats = {}
-    for rec in list(neg) + list(pos):
-        if rec["theme"] in (NOISE_LABEL, UNCLEAR_LABEL):
-            continue
-        cats[rec["category"]] = cats.get(rec["category"], 0) + rec["count"]
-    cat_total = sum(cats.values()) or 1
 
     segments, legend = "", ""
     for key in ("positive", "negative", "neutral"):
@@ -292,18 +285,6 @@ def render_overview(neg: list, pos: list, sentiment_totals: dict, total_reviews:
         legend += (f'<span class="legend-item"><span class="dot" '
                    f'style="background:{SENTIMENT_COLORS[key]}"></span>{key} {pct:.0f}% '
                    f'<span class="cat-count">({val})</span></span>')
-
-    cat_rows = ""
-    for category, c in sorted(cats.items(), key=lambda kv: kv[1], reverse=True):
-        pct = c / cat_total * 100
-        color = CATEGORY_COLORS.get(category, "#7f848e")
-        cat_rows += (
-            '<div class="cat-row">'
-            f'<span class="cat-label">{esc(category)}</span>'
-            f'<span class="cat-track"><span class="cat-fill" data-w="{pct:.1f}" style="width:0%;background:{color}"></span></span>'
-            f'<span class="cat-num">{pct:.0f}% <span class="cat-count">({c})</span></span>'
-            '</div>'
-        )
 
     filtered_line = ""
     if noise_count:
@@ -317,10 +298,169 @@ def render_overview(neg: list, pos: list, sentiment_totals: dict, total_reviews:
         f'<div class="sentiment-bar">{segments}</div>'
         f'<div class="legend">{legend}</div>'
         '<div class="ov-title">By category <span class="ov-sub">share of categorized reviews</span></div>'
-        f'<div class="cat-list">{cat_rows}</div>'
+        '<div class="donut-wrap"><canvas id="catDonut"></canvas></div>'
         f'{filtered_line}'
         '</div>'
     )
+
+
+
+# ----------------------------------------------------------------------------
+# Summary scoreboard (inline SVG, no dependencies) + Chart.js data helpers
+# ----------------------------------------------------------------------------
+
+def _icon(paths: str, color: str) -> str:
+    """Wrap Feather-style stroke paths in a sized, colored SVG."""
+    return (f'<svg viewBox="0 0 24 24" fill="none" stroke="{color}" stroke-width="2" '
+            f'stroke-linecap="round" stroke-linejoin="round">{paths}</svg>')
+
+
+ICON_REVIEWS = _icon('<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>', "#66c0f4")
+ICON_THEMES = _icon('<polygon points="12 2 2 7 12 12 22 7 12 2"/>'
+                    '<polyline points="2 17 12 22 22 17"/>'
+                    '<polyline points="2 12 12 17 22 12"/>', "#66c0f4")
+ICON_UP = _icon('<polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/>'
+                '<polyline points="17 6 23 6 23 12"/>', "#98c379")
+ICON_DOWN = _icon('<polyline points="23 18 13.5 8.5 8.5 13.5 1 6"/>'
+                  '<polyline points="17 18 23 18 23 12"/>', "#e06c75")
+ICON_FIX = _icon('<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77'
+                 'a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 '
+                 '7.94-7.94l-3.76 3.76z"/>', "#e06c75")
+ICON_PRAISE = _icon('<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 '
+                    '17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>', "#98c379")
+
+
+def category_counts(neg: list, pos: list) -> dict:
+    """Total review count per category across both sides (excluding noise/unclear)."""
+    cats = {}
+    for rec in list(neg) + list(pos):
+        if rec["theme"] in (NOISE_LABEL, UNCLEAR_LABEL):
+            continue
+        cats[rec["category"]] = cats.get(rec["category"], 0) + rec["count"]
+    return cats
+
+
+def render_scoreboard(analysis: dict) -> str:
+    """A band of at-a-glance stat cards shown above the overview."""
+    sent = analysis.get("sentiment_totals", {}) or {}
+    pos = sent.get("positive", 0)
+    neg = sent.get("negative", 0)
+    neu = sent.get("neutral", 0)
+    sent_total = pos + neg + neu
+    total_reviews = analysis.get("total_reviews", 0)
+    pct_pos = round(pos / sent_total * 100) if sent_total else 0
+    pct_neg = round(neg / sent_total * 100) if sent_total else 0
+
+    def real(recs):
+        return [t for t in recs if t["theme"] not in (NOISE_LABEL, UNCLEAR_LABEL)]
+
+    negs = real(analysis.get("negative", []))
+    poss = real(analysis.get("positive", []))
+    themes_count = len(negs) + len(poss)
+    top_fix = esc(negs[0]["theme"]) if negs else "&mdash;"
+    top_praise = esc(poss[0]["theme"]) if poss else "&mdash;"
+
+    def card(icon, label, value, cls=""):
+        return (f'<div class="stat">{icon}<div class="stat-body">'
+                f'<div class="stat-label">{label}</div>'
+                f'<div class="stat-value {cls}">{value}</div></div></div>')
+
+    return (
+        '<div class="scoreboard">'
+        + card(ICON_REVIEWS, "Reviews analyzed", total_reviews)
+        + card(ICON_UP, "Positive", f"{pct_pos}%", "good")
+        + card(ICON_DOWN, "Negative", f"{pct_neg}%", "bad")
+        + card(ICON_THEMES, "Themes found", themes_count)
+        + card(ICON_FIX, "Top fix", top_fix, "small bad")
+        + card(ICON_PRAISE, "Top praise", top_praise, "small good")
+        + '</div>'
+    )
+
+
+def trend_labels(timeline: dict) -> list:
+    """Human-readable x-axis labels for the sentiment trend chart."""
+    pts = timeline.get("points", [])
+    gran = timeline.get("granularity", "day")
+    out = []
+    for p in pts:
+        lab = p.get("label", "")
+        try:
+            parts = [int(x) for x in lab.split("-")]
+            if gran == "month":
+                out.append(date(parts[0], parts[1], 1).strftime("%b %Y"))
+            else:
+                out.append(date(parts[0], parts[1], parts[2]).strftime("%b %d"))
+        except (ValueError, IndexError):
+            out.append(lab)
+    return out
+
+
+# Chart.js (pinned) and the chart setup script (plain string: JS braces are safe).
+CHARTJS_CDN = ('<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/'
+               '4.4.1/chart.umd.min.js"></script>')
+
+CHARTS_JS = """
+<script>
+(function () {
+  var el = document.getElementById('chartdata');
+  if (!el || typeof Chart === 'undefined') return;
+  var data;
+  try { data = JSON.parse(el.textContent); } catch (e) { return; }
+
+  Chart.defaults.color = '#8f98a0';
+  Chart.defaults.font.family = '-apple-system, Segoe UI, Roboto, sans-serif';
+
+  // Category donut.
+  var d = data.donut, dc = document.getElementById('catDonut');
+  if (dc && d && d.values.length) {
+    new Chart(dc, {
+      type: 'doughnut',
+      data: { labels: d.labels,
+              datasets: [{ data: d.values, backgroundColor: d.colors,
+                           borderColor: '#16202d', borderWidth: 2 }] },
+      options: {
+        responsive: true, maintainAspectRatio: false, cutout: '62%',
+        plugins: {
+          legend: { position: 'right', labels: { boxWidth: 12, padding: 10 } },
+          tooltip: { callbacks: { label: function (c) {
+            var total = c.dataset.data.reduce(function (a, b) { return a + b; }, 0);
+            var pct = total ? Math.round(c.parsed / total * 100) : 0;
+            return ' ' + c.label + ': ' + c.parsed + ' (' + pct + '%)';
+          } } }
+        }
+      }
+    });
+  }
+
+  // Sentiment over time.
+  var t = data.trend, tc = document.getElementById('trendChart');
+  if (tc && t && t.labels.length > 1) {
+    var mk = function (label, color, arr) {
+      return { label: label, data: arr, borderColor: color,
+               backgroundColor: color + '33', fill: true, tension: 0.3,
+               pointRadius: 2, borderWidth: 2 };
+    };
+    new Chart(tc, {
+      type: 'line',
+      data: { labels: t.labels, datasets: [
+        mk('Positive', '#98c379', t.positive),
+        mk('Negative', '#e06c75', t.negative),
+        mk('Neutral', '#abb2bf', t.neutral)
+      ] },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        scales: {
+          x: { grid: { color: '#233040' } },
+          y: { grid: { color: '#233040' }, beginAtZero: true, ticks: { precision: 0 } }
+        },
+        plugins: { legend: { labels: { boxWidth: 12, padding: 12 } } }
+      }
+    });
+  }
+})();
+</script>
+"""
 
 
 def build_html(analysis: dict, title: str, refresh_state: dict = None) -> str:
@@ -332,7 +472,38 @@ def build_html(analysis: dict, title: str, refresh_state: dict = None) -> str:
     total_reviews = analysis.get("total_reviews", 0)
     generated = date.today().strftime("%B %d, %Y")
 
-    overview_html = render_overview(neg, pos, sentiment_totals, total_reviews, noise.get("count", 0))
+    overview_html = render_overview(sentiment_totals, total_reviews, noise.get("count", 0))
+    scoreboard_html = render_scoreboard(analysis)
+
+    # Chart.js data: a category donut and an optional sentiment-over-time trend.
+    cats_sorted = sorted(category_counts(neg, pos).items(), key=lambda kv: kv[1], reverse=True)
+    donut = {
+        "labels": [c for c, _ in cats_sorted],
+        "values": [v for _, v in cats_sorted],
+        "colors": [CATEGORY_COLORS.get(c, "#7f848e") for c, _ in cats_sorted],
+    }
+    timeline = analysis.get("sentiment_timeline") or {}
+    pts = timeline.get("points", [])
+    trend = {
+        "labels": trend_labels(timeline),
+        "positive": [p.get("positive", 0) for p in pts],
+        "negative": [p.get("negative", 0) for p in pts],
+        "neutral": [p.get("neutral", 0) for p in pts],
+    }
+    # Escape "</" so a theme name can never break out of the <script> tag.
+    chartdata_json = json.dumps({"donut": donut, "trend": trend},
+                                ensure_ascii=False).replace("</", "<\\/")
+    chartdata_script = f'<script id="chartdata" type="application/json">{chartdata_json}</script>'
+
+    trend_section = ""
+    if len(pts) > 1:
+        grouping = "by month" if timeline.get("granularity") == "month" else "by day"
+        trend_section = (
+            '<h2>Sentiment over time</h2>'
+            f'<div class="trend-sub">Sentiment of the {total_reviews} most recent reviews, '
+            f'grouped {grouping}.</div>'
+            '<div class="trend-wrap"><canvas id="trendChart"></canvas></div>'
+        )
     fix_html = render_side(neg, "negative")
     love_html = render_side(pos, "positive")
 
@@ -366,6 +537,8 @@ def build_html(analysis: dict, title: str, refresh_state: dict = None) -> str:
 
     nav_search = NAV_SEARCH_JS
     toggle_js = TOGGLE_JS
+    charts_js = CHARTS_JS
+    chartjs_cdn = CHARTJS_CDN
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -447,13 +620,27 @@ def build_html(analysis: dict, title: str, refresh_state: dict = None) -> str:
   .refresh.disabled {{ color: #6b7785; border-color: #233040; background: transparent; cursor: not-allowed; }}
   .refresh.admin {{ border-color: #66c0f4; }}
   .admtag {{ font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: #0e1620; background: #66c0f4; border-radius: 3px; padding: 1px 5px; margin-left: 6px; }}
+  .scoreboard {{ display: flex; flex-wrap: wrap; gap: 10px; margin: 0 0 20px; }}
+  .stat {{ flex: 1 1 150px; background: #16202d; border: 1px solid #2a3a4d; border-radius: 6px; padding: 12px 14px; display: flex; gap: 11px; align-items: center; }}
+  .stat svg {{ width: 22px; height: 22px; flex: none; }}
+  .stat-body {{ min-width: 0; }}
+  .stat-label {{ font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: #8f98a0; }}
+  .stat-value {{ font-size: 20px; font-weight: 700; color: #fff; line-height: 1.2; }}
+  .stat-value.small {{ font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
+  .stat-value.good {{ color: #98c379; }}
+  .stat-value.bad {{ color: #e06c75; }}
+  .donut-wrap {{ position: relative; height: 240px; margin: 6px 0 2px; }}
+  .trend-wrap {{ position: relative; height: 270px; background: #16202d; border: 1px solid #2a3a4d; border-radius: 6px; padding: 12px; }}
+  .trend-sub {{ font-size: 12px; color: #8f98a0; margin: 2px 0 10px; }}
 </style>
 </head>
 <body>
   {header_html}
   <main>
+    {scoreboard_html}
     <h2>Overview</h2>
     {overview_html}
+    {trend_section}
     <div class="toggle-bar">
       <div class="toggle-slider" id="toggle-slider"></div>
       <button id="btn-fix" class="toggle-btn active" onclick="showSide('fix')">Fix These</button>
@@ -465,8 +652,11 @@ def build_html(analysis: dict, title: str, refresh_state: dict = None) -> str:
     <h2>Low-signal reviews</h2>
     {noise_html}
   </main>
+  {chartdata_script}
   {nav_search}
   {toggle_js}
+  {chartjs_cdn}
+  {charts_js}
 </body>
 </html>"""
 
