@@ -68,6 +68,10 @@ def load_analysis(app_id, max_age_days):
 
 def save_analysis(app_id, analysis, max_age_days):
     """Persist the analysis: Redis (with a TTL) if configured, else a local file."""
+    # Stamp the save time (shallow copy so we do not mutate the caller's dict).
+    # refresh_status() reads this to enforce the per-visitor refresh cooldown.
+    analysis = dict(analysis)
+    analysis["cached_at"] = time.time()
     payload = json.dumps(analysis, ensure_ascii=False)
     r = _redis_client()
     if r is not None:

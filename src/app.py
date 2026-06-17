@@ -13,20 +13,35 @@ Run it:
 Then open http://127.0.0.1:5000 in your browser.
 """
 
+import os
 import threading
+import time
 import uuid
+from hmac import compare_digest
 
-from flask import Flask, request, jsonify, Response
+from flask import Flask, request, jsonify, Response, session, redirect
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from search import search_games
-from pipeline import get_analysis
+from pipeline import get_analysis, DEFAULT_MAX_AGE_DAYS
 from report import build_html
+import store
 
 
 app = Flask(__name__)
+
+# Secret key signs the admin session cookie. Set SECRET_KEY in production so the
+# admin login survives restarts; fall back to a random per-process key in dev.
+app.secret_key = os.environ.get("SECRET_KEY") or os.urandom(24).hex()
+
+# Owner-only password. When unset, the admin bypass is simply disabled.
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
+
+# A normal visitor can only force a re-analysis once the cached report is older
+# than this. The owner (admin) bypasses it entirely.
+REFRESH_COOLDOWN_SECONDS = 24 * 3600
 
 # Behind a host's proxy (e.g. Render), trust X-Forwarded-* so the rate limiter
 # sees real client IPs rather than the proxy's.
@@ -36,6 +51,31 @@ app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 # fine for the single-worker deploy; a multi-worker setup would need a shared
 # store (parked with the concurrency work).
 limiter = Limiter(get_remote_address, app=app)
+
+
+def is_admin() -> bool:
+    """True when the current session has authenticated as the owner."""
+    return bool(session.get("admin"))
+
+
+def refresh_status(appid):
+    """
+    Decide whether a force-refresh is allowed for this game right now.
+
+    Returns (allowed: bool, wait_seconds: int). Admins are always allowed.
+    Other visitors must wait until the cached report is older than the cooldown.
+    """
+    if is_admin():
+        return True, 0
+    cached = store.load_analysis(appid, DEFAULT_MAX_AGE_DAYS)
+    stamped = (cached or {}).get("cached_at")
+    if not stamped:
+        # No fresh cache (or a pre-stamp entry): nothing recent to protect.
+        return True, 0
+    remaining = REFRESH_COOLDOWN_SECONDS - (time.time() - stamped)
+    if remaining <= 0:
+        return True, 0
+    return False, int(remaining)
 
 
 # The home page. Plain string (not an f-string) so the JS braces are safe.
@@ -156,7 +196,18 @@ def analyze():
 
     # get_analysis uses the cache, so repeat lookups are instant and free.
     analysis = get_analysis(appid)
-    return Response(build_html(analysis, title), mimetype="text/html")
+
+    # Tell the report whether a force-refresh is available right now, so the
+    # button renders enabled, on cooldown, or in admin mode.
+    allowed, wait = refresh_status(appid)
+    refresh_state = {
+        "appid": appid,
+        "title": title,
+        "allowed": allowed,
+        "wait_hours": max(1, round(wait / 3600)) if wait else 0,
+        "admin": is_admin(),
+    }
+    return Response(build_html(analysis, title, refresh_state), mimetype="text/html")
 
 
 # ----------------------------------------------------------------------------
@@ -168,16 +219,24 @@ def analyze():
 JOBS = {}
 
 
-def _run_job(job_id, appid):
+def _run_job(job_id, appid, refresh=False):
     """Run the analysis in a background thread, recording progress in JOBS."""
     def progress(pct, msg):
         JOBS[job_id]["percent"] = pct
         JOBS[job_id]["message"] = msg
     try:
-        get_analysis(appid, progress=progress)   # writes the cache as it goes
+        get_analysis(appid, refresh=refresh, progress=progress)  # writes the cache
         JOBS[job_id].update(percent=100, message="Done", done=True)
     except Exception as e:
         JOBS[job_id].update(error=str(e), done=True)
+
+
+def _begin_job(appid, refresh=False):
+    """Create a job record and start the background thread; return the job id."""
+    job_id = uuid.uuid4().hex
+    JOBS[job_id] = {"percent": 0, "message": "Starting...", "done": False, "error": None}
+    threading.Thread(target=_run_job, args=(job_id, appid, refresh), daemon=True).start()
+    return job_id
 
 
 ANALYZING_PAGE = """<!DOCTYPE html>
@@ -214,6 +273,7 @@ ANALYZING_PAGE = """<!DOCTYPE html>
   const params = new URLSearchParams(window.location.search);
   const appid = params.get('appid');
   const title = params.get('title') || '';
+  const force = params.get('force');   // set by the report's Re-analyze button
   if (title) document.getElementById('title').textContent = 'Analyzing ' + title;
 
   const fill = document.getElementById('fill');
@@ -254,7 +314,8 @@ ANALYZING_PAGE = """<!DOCTYPE html>
   }
 
   var jobId = null;
-  fetch('/start?appid=' + encodeURIComponent(appid))
+  var startUrl = (force ? '/refresh' : '/start') + '?appid=' + encodeURIComponent(appid);
+  fetch(startUrl)
     .then(r => r.json())
     .then(d => { if (d.error) { showError(d.error); return; } jobId = d.job; poll(); })
     .catch(() => showError('Could not start analysis.'));
@@ -285,14 +346,30 @@ def analyzing():
 @app.route("/start")
 @limiter.limit("10 per hour; 3 per minute")
 def start():
-    """Kick off a background analysis job; returns a job id to poll."""
+    """Kick off a background analysis job (cache-friendly); returns a job id."""
     appid = request.args.get("appid")
     if not appid:
         return jsonify({"error": "missing appid"}), 400
-    job_id = uuid.uuid4().hex
-    JOBS[job_id] = {"percent": 0, "message": "Starting...", "done": False, "error": None}
-    threading.Thread(target=_run_job, args=(job_id, appid), daemon=True).start()
-    return jsonify({"job": job_id})
+    return jsonify({"job": _begin_job(appid, refresh=False)})
+
+
+@app.route("/refresh")
+@limiter.limit("3 per hour", exempt_when=is_admin)
+def refresh():
+    """
+    Force a fresh re-analysis, bypassing the cache. Guarded so normal visitors
+    cannot spam it: the report must be older than the cooldown (admins exempt),
+    and the route is rate limited on top of that.
+    """
+    appid = request.args.get("appid")
+    if not appid:
+        return jsonify({"error": "missing appid"}), 400
+    allowed, wait = refresh_status(appid)
+    if not allowed:
+        hours = max(1, round(wait / 3600))
+        return jsonify({"error": f"This report was updated recently. A fresh "
+                                 f"re-analysis is available in about {hours}h."}), 429
+    return jsonify({"job": _begin_job(appid, refresh=True)})
 
 
 @app.route("/progress")
@@ -372,6 +449,93 @@ ABOUT_PAGE = """<!DOCTYPE html>
 def about():
     """Serve the About SteamSifter page."""
     return ABOUT_PAGE
+
+
+# ----------------------------------------------------------------------------
+# Rate-limit response + owner (admin) login
+# ----------------------------------------------------------------------------
+
+@app.errorhandler(429)
+def too_many(_e):
+    """JSON for the polled endpoints so the page can show a clean message."""
+    if request.path in ("/start", "/refresh"):
+        return jsonify({"error": "You are doing that too often. Please wait a "
+                        "bit and try again."}), 429
+    return Response("Rate limit exceeded. Please slow down and try again.",
+                    status=429, mimetype="text/plain")
+
+
+ADMIN_PAGE = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Owner sign-in | SteamSifter</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; min-height: 100vh;
+         display: flex; align-items: center; justify-content: center;
+         background: linear-gradient(to bottom, #1b2838, #16202d) fixed; color: #c7d5e0; }
+  .box { width: 100%; max-width: 360px; padding: 24px; text-align: center; }
+  .brand { color: #66c0f4; letter-spacing: 3px; text-transform: uppercase; font-size: 13px; }
+  h1 { margin: 10px 0 18px; font-size: 22px; color: #fff; }
+  input { width: 100%; padding: 12px 14px; font-size: 15px; border-radius: 6px;
+          border: 1px solid #2a475e; background: #16202d; color: #fff; margin-bottom: 12px; }
+  .btn { display: inline-block; border: 1px solid #2a475e; background: #16202d; color: #66c0f4;
+         border-radius: 6px; padding: 10px 16px; font-size: 14px; font-weight: 600;
+         text-decoration: none; cursor: pointer; }
+  .btn:hover { background: #1f3346; color: #8fd0fb; }
+  .btn.ghost { color: #8f98a0; }
+  .msg { color: #8f98a0; font-size: 13px; margin-bottom: 14px; }
+</style>
+</head>
+<body>
+  <div class="box">
+    <div class="brand">SteamSifter</div>
+    <h1>Owner sign-in</h1>
+    {{BODY}}
+  </div>
+</body>
+</html>"""
+
+
+def _admin_page(message, signed_in=False):
+    """Render the admin page with a message and either a form or sign-out."""
+    note = f'<div class="msg">{message}</div>' if message else ''
+    if signed_in:
+        body = (note +
+                '<a class="btn" href="/admin/logout">Sign out</a> '
+                '<a class="btn ghost" href="/">Back to site</a>')
+    else:
+        body = (note +
+                '<form method="post">'
+                '<input type="password" name="password" placeholder="Owner password" autofocus>'
+                '<button class="btn" type="submit">Sign in</button>'
+                '</form>')
+    return Response(ADMIN_PAGE.replace("{{BODY}}", body), mimetype="text/html")
+
+
+@app.route("/admin", methods=["GET", "POST"])
+def admin():
+    """Owner login. A correct password sets a signed admin session cookie."""
+    if request.method == "POST":
+        if not ADMIN_PASSWORD:
+            return _admin_page("Admin login is not configured on this server.")
+        if compare_digest(request.form.get("password", ""), ADMIN_PASSWORD):
+            session["admin"] = True
+            session.permanent = True
+            return redirect("/")
+        return _admin_page("Incorrect password.")
+    if is_admin():
+        return _admin_page("You are signed in as the owner.", signed_in=True)
+    return _admin_page("")
+
+
+@app.route("/admin/logout")
+def admin_logout():
+    """Clear the admin session."""
+    session.pop("admin", None)
+    return redirect("/")
 
 
 if __name__ == "__main__":

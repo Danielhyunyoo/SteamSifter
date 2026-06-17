@@ -16,6 +16,7 @@ import html
 import json
 import os
 from datetime import date
+from urllib.parse import quote
 
 
 # A color per category, used for the little category "pill" on each card.
@@ -124,6 +125,29 @@ document.addEventListener('DOMContentLoaded', function () {
 def esc(text) -> str:
     """Escape text so review content can't break the HTML."""
     return html.escape(str(text))
+
+def render_refresh(state: dict) -> str:
+    """Render the Re-analyze control in its enabled, cooldown, or admin state.
+
+    state is None for offline/CLI reports (no button). The live app passes a
+    dict: {appid, title, allowed, wait_hours, admin}.
+    """
+    if not state:
+        return ""
+    appid = esc(state.get("appid", ""))
+    href = f'/analyzing?appid={appid}&title={quote(state.get("title", ""))}&force=1'
+    if state.get("admin"):
+        return (f'<a class="refresh admin" href="{href}" '
+                'title="Admin: refresh anytime">Re-analyze &#8635;'
+                '<span class="admtag">admin</span></a>')
+    if state.get("allowed"):
+        return (f'<a class="refresh" href="{href}" '
+                'title="Run a fresh analysis with the latest reviews">'
+                'Re-analyze &#8635;</a>')
+    wait = state.get("wait_hours", 0)
+    return ('<span class="refresh disabled" title="This report was updated '
+            'recently; a fresh run is available later">'
+            f'Re-analyze available in ~{wait}h</span>')
 
 
 def render_example(example: dict) -> str:
@@ -299,7 +323,7 @@ def render_overview(neg: list, pos: list, sentiment_totals: dict, total_reviews:
     )
 
 
-def build_html(analysis: dict, title: str) -> str:
+def build_html(analysis: dict, title: str, refresh_state: dict = None) -> str:
     """Assemble the full report from a combined analysis dict (see analyze_both)."""
     neg = analysis.get("negative", [])
     pos = analysis.get("positive", [])
@@ -319,6 +343,8 @@ def build_html(analysis: dict, title: str) -> str:
                       "out as noise (jokes, one-liners, off-topic rants, and spam) before "
                       "theming.</div>")
 
+    refresh_html = render_refresh(refresh_state)
+
     # Header markup (plain strings, brace-safe).
     header_html = (
         '<header>'
@@ -328,6 +354,7 @@ def build_html(analysis: dict, title: str) -> str:
         f'<h1>{esc(title)}</h1>'
         f'<div class="meta">Review analysis &middot; {total_reviews} reviews &middot; '
         f'Generated {generated}</div>'
+        f'{refresh_html}'
         '</div>'
         '<div class="navsearch">'
         '<input id="navq" type="text" placeholder="Analyze another game..." autocomplete="off">'
@@ -415,6 +442,11 @@ def build_html(analysis: dict, title: str) -> str:
   .thumb.down {{ background: #3a1f24; color: #e08f96; }}
   .thumb svg {{ display: inline-block; }}
   .thumb-dn svg {{ transform: rotate(180deg); }}
+  .refresh {{ display: inline-block; margin-top: 10px; font-size: 13px; font-weight: 600; color: #66c0f4; text-decoration: none; background: #16202d; border: 1px solid #2a475e; border-radius: 4px; padding: 6px 12px; }}
+  .refresh:hover {{ background: #1f3346; color: #8fd0fb; }}
+  .refresh.disabled {{ color: #6b7785; border-color: #233040; background: transparent; cursor: not-allowed; }}
+  .refresh.admin {{ border-color: #66c0f4; }}
+  .admtag {{ font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: #0e1620; background: #66c0f4; border-radius: 3px; padding: 1px 5px; margin-left: 6px; }}
 </style>
 </head>
 <body>
