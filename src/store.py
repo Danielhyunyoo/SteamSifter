@@ -46,12 +46,14 @@ def load_analysis(app_id, max_age_days):
     if r is not None:
         try:
             raw = r.get(f"analysis:{app_id}")
-            return json.loads(raw) if raw else None
+            if raw:
+                return json.loads(raw)
         except Exception as err:
-            print(f"Redis read failed ({err}); ignoring cache.")
-            return None
+            print(f"Redis read failed ({err}); checking local file.")
+        # Redis miss/unavailable: fall through to the local file as a backup,
+        # so a failed/denied Redis write does not force a full re-analysis.
 
-    # Filesystem fallback, with an age check (Redis uses a TTL instead).
+    # Filesystem (primary with no Redis, secondary otherwise). Age-checked.
     path = os.path.join(DATA_DIR, f"analysis_{app_id}.json")
     if not os.path.exists(path):
         return None
