@@ -485,12 +485,12 @@ CHARTS_JS = """
       options: {
         responsive: true, maintainAspectRatio: false,
         interaction: { mode: 'index', intersect: false },
-        layout: { padding: { top: 36 } },
+        layout: { padding: { top: 16 } },
         scales: {
           x: { grid: { color: '#233040' } },
-          y: { grid: { color: '#233040' }, beginAtZero: true, ticks: { precision: 0 },
+          y: { grid: { color: '#233040' }, beginAtZero: true, grace: '30%', ticks: { precision: 0 },
                title: { display: !narrow, text: 'by sentiment' } },
-          yVol: { position: 'right', grid: { display: false }, beginAtZero: true,
+          yVol: { position: 'right', grid: { display: false }, beginAtZero: true, grace: '30%',
                   ticks: { precision: 0 }, title: { display: !narrow, text: 'total reviews' } }
         },
         plugins: {
@@ -613,7 +613,7 @@ def build_html(analysis: dict, title: str, refresh_state: dict = None) -> str:
   .toggle-slider {{ position: absolute; top: 3px; bottom: 3px; left: 3px; width: calc(50% - 3px); border-radius: 3px; background: linear-gradient(to bottom, #1a9fff, #0a78c2); transition: transform .25s ease; z-index: 0; }}
   .toggle-btn {{ position: relative; z-index: 1; flex: 1 1 0; min-width: 130px; text-align: center; border: 0; background: transparent; padding: 8px 18px; border-radius: 3px; font-size: 14px; font-weight: 600; color: #8f98a0; cursor: pointer; transition: color .25s ease; }}
   .toggle-btn.active {{ color: #fff; }}
-  .card {{ background: #16202d; border: 1px solid #233040; border-radius: 4px; padding: 18px 20px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.2); }}
+  .card {{ background: rgba(22, 32, 45, 0.72); border: 1px solid #233040; border-radius: 4px; padding: 18px 20px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.2); }}
   .card-head {{ display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }}
   .rank {{ font-weight: 700; color: #66c0f4; font-size: 14px; }}
   .theme-name {{ font-weight: 700; font-size: 16px; color: #fff; }}
@@ -632,7 +632,7 @@ def build_html(analysis: dict, title: str, refresh_state: dict = None) -> str:
   .badge {{ display: inline-block; font-size: 11px; background: #2a3f5a; color: #c7d5e0; border-radius: 3px; padding: 1px 7px; margin-right: 6px; }}
   .unclear {{ background: #16202d; border: 1px solid #2a475e; border-left: 3px solid #66c0f4; border-radius: 3px; padding: 14px 16px; font-size: 14px; color: #8f98a0; margin-top: 10px; }}
   .empty {{ color: #8f98a0; font-style: italic; }}
-  .overview {{ background: #16202d; border: 1px solid #2a3a4d; border-radius: 4px; padding: 18px 20px; margin-bottom: 8px; }}
+  .overview {{ background: rgba(22, 32, 45, 0.72); border: 1px solid #2a3a4d; border-radius: 4px; padding: 18px 20px; margin-bottom: 8px; }}
   .ov-title {{ font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: #66c0f4; margin: 10px 0 8px; font-weight: 700; }}
   .ov-title:first-child {{ margin-top: 0; }}
   .sentiment-bar {{ display: flex; height: 14px; border-radius: 3px; overflow: hidden; background: #0e1620; }}
@@ -669,7 +669,7 @@ def build_html(analysis: dict, title: str, refresh_state: dict = None) -> str:
   .refresh.admin {{ border-color: #66c0f4; }}
   .admtag {{ font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: #0e1620; background: #66c0f4; border-radius: 3px; padding: 1px 5px; margin-left: 6px; }}
   .scoreboard {{ display: flex; flex-wrap: wrap; gap: 10px; margin: 0 0 20px; }}
-  .stat {{ flex: 1 1 150px; background: #16202d; border: 1px solid #2a3a4d; border-radius: 6px; padding: 12px 14px; display: flex; gap: 11px; align-items: center; }}
+  .stat {{ flex: 1 1 150px; background: rgba(22, 32, 45, 0.72); border: 1px solid #2a3a4d; border-radius: 6px; padding: 12px 14px; display: flex; gap: 11px; align-items: center; }}
   .stat svg {{ width: 22px; height: 22px; flex: none; }}
   .stat-body {{ min-width: 0; }}
   .stat-label {{ font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: #8f98a0; }}
@@ -679,7 +679,7 @@ def build_html(analysis: dict, title: str, refresh_state: dict = None) -> str:
   .stat-value.bad {{ color: #e06c75; }}
   .donut-wrap {{ position: relative; height: 240px; margin: 6px 0 2px; }}
   .donut-hint {{ font-size: 11px; color: #8f98a0; margin-top: 6px; }}
-  .trend-wrap {{ position: relative; height: 270px; background: #16202d; border: 1px solid #2a3a4d; border-radius: 6px; padding: 12px; }}
+  .trend-wrap {{ position: relative; height: 270px; background: rgba(22, 32, 45, 0.72); border: 1px solid #2a3a4d; border-radius: 6px; padding: 12px; }}
   .trend-sub {{ font-size: 12px; color: #8f98a0; margin: 2px 0 10px; }}
   @media (max-width: 640px) {{
     header {{ padding: 16px 18px; }}
