@@ -42,6 +42,11 @@ TARGET_THEME_COUNT = "8 to 12" # how many themes we ask the model to produce
 EXAMPLES_PER_THEME = 2         # representative quotes to keep per theme
 UNCLEAR_LABEL = "unclear"      # fallback when a review fits no discovered theme
 
+# Theming method: "embed" uses embeddings + HDBSCAN clustering (fast/cheap);
+# "llm" uses the original per-review LLM assignment. Embed falls back to llm
+# automatically if embeddings/clustering are unavailable or error out.
+THEME_METHOD = os.environ.get("THEME_METHOD", "embed").lower()
+
 
 # ----------------------------------------------------------------------------
 # Schemas
@@ -393,7 +398,14 @@ def analyze_both(client, classified: list, on_progress=None) -> dict:
     def theme_group(group, label):
         if not group:
             return []
-        print(f"Theming {label} reviews ({len(group)})...")
+        print(f"Theming {label} reviews ({len(group)}) via {THEME_METHOD}...")
+        if THEME_METHOD == "embed":
+            try:
+                from cluster_themes import theme_group_embed
+                return theme_group_embed(client, group)
+            except Exception as err:
+                print(f"  Embedding theming failed ({err}); using LLM theming.")
+        # LLM theming (original two-pass): discover themes, then assign each review.
         themes = discover_themes(client, group)
         assign_themes(client, group, themes)
         return aggregate_themes(group, themes)
