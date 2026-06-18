@@ -22,14 +22,14 @@ SteamSifter takes a game, pulls its reviews automatically, filters the noise, an
 6. **Rank by impact:** themes are scored by summed behavioral weight, `1 + log10(1 + playtime_hours) + log10(1 + helpful_votes)` per review, so issues raised by experienced, upvoted players outrank low-effort rage reviews.
 7. **Present:** a dashboard with a summary scoreboard, a sentiment donut, a sentiment-over-time trend, an Issues / Praise toggle, ranked theme cards (each with a High/Med/Low impact chip and clickable example quotes that link back to the real Steam review), and a low-signal noise summary.
 
-Results are cached per game and persisted, so repeat lookups are instant and free. A game can be re-analyzed by anyone once it has gained roughly 20% more reviews, and by the owner at any time.
+Classification and theming run as concurrent batches, so a first-time analysis of a few hundred reviews completes in well under a minute. Results are cached per game and persisted, so repeat lookups are instant and free. A game can be re-analyzed by anyone once it has gained roughly 20% more reviews, and by the owner at any time.
 
 > NOTE TO DEVELOPERS: "impact" is an inferred heuristic (frequency, sentiment, playtime, helpful-votes), not ground truth. It is presented as an informed estimate. Take that as you will.
 
 ## Tech Stack
 
 - **Reviews and metadata:** Steam public `appreviews` API (free, no key), plus `storesearch` for game-name to app-ID lookups.
-- **AI:** OpenAI (`gpt-4.1-mini`) by default, swappable to Google Gemini (free tier) via the `LLM_PROVIDER` env var. Structured JSON output is enforced with Pydantic schemas, over batched classification and a two-pass theming step.
+- **AI:** OpenAI (`gpt-4.1-mini`) by default, swappable to Google Gemini (free tier) via the `LLM_PROVIDER` env var. Structured JSON output is enforced with Pydantic schemas, over batched classification and a two-pass theming step, with batches run concurrently across a thread pool to keep analysis fast.
 - **Web app:** Flask, served in production by gunicorn. Background worker threads with an in-memory job registry power the live progress bar; flask-limiter applies per-visitor rate limits; werkzeug ProxyFix gives correct client IPs behind Render's proxy.
 - **Frontend:** server-rendered HTML and CSS in a Steam-inspired theme. Chart.js for the category donut and sentiment-over-time trend, inline SVG for the scoreboard and icons, a Web Audio completion chime, and a fully responsive (mobile-friendly) layout.
 - **Persistence:** Upstash Redis (TLS) caches analyses so they survive redeploys, with a local JSON-file fallback for development.
@@ -41,14 +41,15 @@ Results are cached per game and persisted, so repeat lookups are instant and fre
 - [x] **V2:** behavioral impact weighting (playtime + helpful-votes), noise filter, representative quotes, sentiment charts, positive "Double Down" view
 - [x] **V3:** web app with game-name search, one-pass analysis with a Fix These / Double Down toggle, live progress bar, per-game caching, and a Steam-styled UI
 - [x] **V4:** UI animations (overview + review bars, toggle slider); home-page links (GitHub, About, Steam, LinkedIn) with a clear Valve/Steam non-affiliation notice; clickable source links on every shown review
-- [x] **V5:** live public deployment on Render with a production stack (gunicorn, rate limiting, proxy-aware); persistent Redis cache; summary scoreboard, category donut, and sentiment-over-time trend; per-review recommend/not-recommend badges; impact shown as High/Med/Low with an explainer; toggle renamed to Issues / Praise; owner-gated re-analyze that unlocks for the public after ~20% review growth; numeric progress counter with a completion chime; mobile-responsive across all pages
-- [ ] **Later:** scale to thousands of reviews via embeddings clustering, exportable reports (PDF/CSV), and review filters
+- [x] **V5:** live public deployment on Render with a production stack (gunicorn, rate limiting, proxy-aware); persistent Redis cache; summary scoreboard, category donut, and sentiment-over-time trend; per-review recommend/not-recommend badges; impact shown as High/Med/Low with an explainer; toggle renamed to Issues / Praise; owner-gated re-analyze that unlocks for the public after ~20% review growth; numeric progress counter with a completion chime; mobile-responsive across all pages; concurrent batch processing that cut a fresh analysis from ~3 minutes to under a minute
+- [ ] **V6:** scale and hardening for real traffic, same-game request de-duplication (one shared job per game), background-job cleanup, and a scale-to-thousands pipeline (embed once, label clusters, propagate sample labels) to handle far more than a few hundred reviews
+- [ ] **Later:** multi-worker support, exportable reports (PDF/CSV), and review filters
 
 ## Current Limitations
 
-SteamSifter is now deployed and usable by anyone, but it is still a solo project tuned for light traffic. It runs a single worker on a free Render instance and shares one AI key, so heavy concurrent use could hit rate or quota limits. To keep things fast and within budget, it analyzes roughly the 300 most recent reviews per game rather than the full history; the sentiment-over-time trend reflects that recent window, so its span varies with how active a game is. Persistent caching means popular titles are only analyzed once until enough new reviews accumulate.
+SteamSifter is deployed and open to anyone, but it is still a solo project tuned for light traffic: a single worker on a free Render instance sharing one AI key. Thanks to concurrent batch processing, a fresh analysis of a game's most recent ~300 reviews now finishes in well under a minute, and results are cached so popular titles are only re-analyzed once enough new reviews accumulate. Scaling to many simultaneous users, or to thousands of reviews per game, is the next milestone (V6).
 
-As of June 17, 2026, SteamSifter runs on the OpenAI API (`gpt-4.1-mini`) and can switch to free-tier Gemini when needed.
+As of June 18, 2026, SteamSifter runs on the OpenAI API (`gpt-4.1-mini`) and can switch to free-tier Gemini when needed.
 
 ## Disclaimer
 

@@ -502,26 +502,26 @@ ABOUT_PAGE = """<!DOCTYPE html>
 
     <h2>How It Works</h2>
     <ol>
-      <li><strong>Ingest:</strong> fetches reviews directly from Steam's free public review API. Each review carries useful metadata: positive/negative flag, helpful-vote count, and the reviewer's playtime.</li>
+      <li><strong>Search and ingest:</strong> resolves a game name to its Steam app ID and pulls the most recent reviews from Steam's free public API, each with its recommend flag, helpful votes, playtime, and date.</li>
       <li><strong>Filter for signal:</strong> a relevance classifier separates constructive feedback from off-topic noise, jokes, and review-bomb spam.</li>
-      <li><strong>Classify:</strong> each review is tagged with sentiment and a category (bug, performance, gameplay, and so on) using structured model output.</li>
-      <li><strong>Cluster:</strong> reviews describing the same issue are grouped into specific themes.</li>
+      <li><strong>Classify:</strong> each review is tagged with sentiment and a category (bug, performance, gameplay, cheating, monetization, UI/UX, content, community, praise) using structured model output. Batches run concurrently to keep it fast.</li>
+      <li><strong>Theme:</strong> reviews are grouped into specific, named themes, separately for the negative and positive sides.</li>
       <li><strong>Rank by impact:</strong> themes are sorted by frequency plus behavioral weight, so issues raised by long-playtime, highly-upvoted reviewers rank above low-effort rage reviews.</li>
-      <li><strong>Present:</strong> a dashboard with a Fix These view and a Double Down view, including counts, sentiment charts, and representative quotes.</li>
+      <li><strong>Present:</strong> a dashboard with a summary scoreboard, a sentiment donut, a sentiment-over-time trend, and an Issues / Praise toggle with ranked theme cards and clickable example quotes.</li>
     </ol>
     <p class="note">"Impact" is an inferred heuristic (frequency, sentiment, playtime, helpful-votes), not ground truth. It is presented as an informed estimate.</p>
 
     <h2>Tech Stack</h2>
     <ul>
-      <li><strong>Reviews:</strong> Steam public appreviews API (free, no key)</li>
-      <li><strong>AI:</strong> LLM inference with structured/JSON output (OpenAI, or free-tier Gemini)</li>
-      <li><strong>Frontend:</strong> web UI with charts for sentiment and themes</li>
-      <li><strong>Backend:</strong> Flask, batched review processing, and per-game caching</li>
+      <li><strong>Reviews:</strong> Steam public appreviews API (free, no key), plus storesearch for name-to-app-ID lookups</li>
+      <li><strong>AI:</strong> OpenAI (gpt-4.1-mini) with structured/JSON output, swappable to free-tier Gemini; classification and theming run as concurrent batches</li>
+      <li><strong>Frontend:</strong> Steam-styled, mobile-responsive UI with Chart.js sentiment/category charts and a summary scoreboard</li>
+      <li><strong>Backend:</strong> Flask and gunicorn, background jobs with a live progress bar, per-game caching persisted to Redis</li>
     </ul>
 
     <h2>Current Limitations</h2>
-    <p>SteamSifter runs on a free or low-cost AI key, which caps how many requests it can make per day and per minute. That is fine for what this is right now: a solo project built for small, low-traffic usage. Scaling to many concurrent users would need a paid API key (where classifying a few hundred reviews costs only pennies) plus per-game caching so popular titles are analyzed only once.</p>
-    <p>As of June 15, 2026, SteamSifter runs using an OpenAI API, and switches to other free-tier keys when necessary.</p>
+    <p>SteamSifter is deployed and open to anyone, but it is a solo project tuned for light traffic: a single worker on a free Render instance sharing one AI key. Thanks to concurrent batch processing, a fresh analysis of a game's most recent ~300 reviews now finishes in well under a minute, and results are cached so popular titles are only re-analyzed once enough new reviews accumulate. Scaling to many simultaneous users, or to thousands of reviews per game, is the next milestone.</p>
+    <p>As of June 18, 2026, SteamSifter runs on the OpenAI API (gpt-4.1-mini) and can switch to free-tier Gemini when needed.</p>
   </main>
 </body>
 </html>"""
