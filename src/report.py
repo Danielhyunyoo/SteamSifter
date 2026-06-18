@@ -509,7 +509,7 @@ CHARTS_JS = """
     ];
     if (t.volume && t.volume.length) {
       datasets.push({ type: 'bar', label: 'Reviews', data: t.volume,
-        backgroundColor: 'rgba(102,192,244,0.16)', borderWidth: 0,
+        backgroundColor: 'rgba(102,192,244,0.16)', borderColor: '#66c0f4', borderWidth: 0,
         yAxisID: 'yVol', order: 5 });
     }
     new Chart(tc, {
@@ -521,13 +521,13 @@ CHARTS_JS = """
         layout: { padding: { top: 16 } },
         scales: {
           x: { grid: { color: '#233040' } },
-          y: { grid: { color: '#233040' }, beginAtZero: true, grace: '30%', ticks: { precision: 0 },
+          y: { grid: { color: '#233040' }, beginAtZero: true, grace: '50%', ticks: { precision: 0 },
                title: { display: !narrow, text: 'by sentiment' } },
-          yVol: { position: 'right', grid: { display: false }, beginAtZero: true, grace: '30%',
+          yVol: { position: 'right', grid: { display: false }, beginAtZero: true, grace: '50%',
                   ticks: { precision: 0 }, title: { display: !narrow, text: 'total reviews' } }
         },
         plugins: {
-          legend: { labels: { boxWidth: 12, padding: 12 } },
+          legend: { position: 'bottom', labels: { boxWidth: 12, padding: 12 } },
           tooltip: { enabled: false, external: externalTrendTip }
         }
       },
@@ -714,11 +714,11 @@ def build_html(analysis: dict, title: str, refresh_state: dict = None) -> str:
   .stat-value.bad {{ color: #e06c75; }}
   .donut-wrap {{ position: relative; height: 240px; margin: 6px 0 2px; }}
   .donut-hint {{ font-size: 11px; color: #8f98a0; margin-top: 6px; }}
-  .trend-wrap {{ position: relative; height: 270px; background: rgba(22, 32, 45, 0.72); border: 1px solid #2a3a4d; border-radius: 6px; padding: 12px; }}
+  .trend-wrap {{ position: relative; height: 300px; background: rgba(22, 32, 45, 0.72); border: 1px solid #2a3a4d; border-radius: 6px; padding: 12px; }}
   .trend-sub {{ font-size: 12px; color: #8f98a0; margin: 2px 0 10px; }}
-  .trend-tip {{ position: absolute; top: 8px; left: 50%; transform: translateX(-50%); background: rgba(14,22,32,0.95); border: 1px solid #2a3a4d; border-radius: 6px; padding: 8px 10px; font-size: 12px; color: #c7d5e0; pointer-events: none; opacity: 0; transition: opacity .08s; white-space: nowrap; z-index: 4; }}
+  .trend-tip {{ position: absolute; top: 2px; left: 50%; transform: translateX(-50%); background: rgba(14,22,32,0.78); border: 1px solid #2a3a4d; border-radius: 6px; padding: 7px 10px; font-size: 12px; color: #c7d5e0; pointer-events: none; opacity: 0; transition: opacity .08s; white-space: nowrap; z-index: 4; }}
   .trend-tip .tt-title {{ font-weight: 700; color: #fff; margin-bottom: 4px; }}
-  .trend-tip .tt-row {{ display: flex; align-items: center; gap: 6px; line-height: 1.55; }}
+  .trend-tip .tt-row {{ display: flex; align-items: center; gap: 6px; line-height: 1.4; }}
   .trend-tip .tt-dot {{ width: 9px; height: 9px; border-radius: 2px; flex: none; }}
   @media (max-width: 640px) {{
     header {{ padding: 16px 18px; }}
