@@ -429,14 +429,22 @@ CHARTS_JS = """
   Chart.defaults.color = '#8f98a0';
   Chart.defaults.font.family = '-apple-system, Segoe UI, Roboto, sans-serif';
 
-  // Pin the trend tooltip above the highest visible point at the hovered x.
-  if (Chart.Tooltip && Chart.Tooltip.positioners) {
-    Chart.Tooltip.positioners.aboveTop = function (items) {
-      if (!items.length) return false;
-      var x = items[0].element.x;
-      var topY = Math.min.apply(null, items.map(function (it) { return it.element.y; }));
-      return { x: x, y: topY };
-    };
+  // Fixed-position trend tooltip: render an HTML box pinned to the top of the
+  // chart wrapper so it stays at a constant height and never clips the lines.
+  function externalTrendTip(context) {
+    var tip = document.getElementById('trendTip');
+    if (!tip) return;
+    var model = context.tooltip;
+    if (!model || model.opacity === 0) { tip.style.opacity = '0'; return; }
+    var title = (model.title && model.title[0]) || '';
+    var rows = (model.body || []).map(function (b, i) {
+      var lc = model.labelColors[i] || {};
+      var color = lc.borderColor || lc.backgroundColor || '#8f98a0';
+      return '<div class="tt-row"><span class="tt-dot" style="background:' + color +
+             '"></span>' + b.lines.join(' ') + '</div>';
+    }).join('');
+    tip.innerHTML = '<div class="tt-title">' + title + '</div>' + rows;
+    tip.style.opacity = '1';
   }
 
   // Category donut.
@@ -495,7 +503,7 @@ CHARTS_JS = """
         },
         plugins: {
           legend: { labels: { boxWidth: 12, padding: 12 } },
-          tooltip: { position: 'aboveTop', yAlign: 'bottom', caretPadding: 6 }
+          tooltip: { enabled: false, external: externalTrendTip }
         }
       }
     });
@@ -545,7 +553,8 @@ def build_html(analysis: dict, title: str, refresh_state: dict = None) -> str:
             '<h2>Sentiment over time</h2>'
             f'<div class="trend-sub">Sentiment of the {total_reviews} most recent reviews, '
             f'grouped {grouping}.</div>'
-            '<div class="trend-wrap"><canvas id="trendChart"></canvas></div>'
+            '<div class="trend-wrap"><canvas id="trendChart"></canvas>'
+            '<div id="trendTip" class="trend-tip"></div></div>'
         )
     fix_html = render_side(neg, "negative")
     love_html = render_side(pos, "positive")
@@ -681,6 +690,10 @@ def build_html(analysis: dict, title: str, refresh_state: dict = None) -> str:
   .donut-hint {{ font-size: 11px; color: #8f98a0; margin-top: 6px; }}
   .trend-wrap {{ position: relative; height: 270px; background: rgba(22, 32, 45, 0.72); border: 1px solid #2a3a4d; border-radius: 6px; padding: 12px; }}
   .trend-sub {{ font-size: 12px; color: #8f98a0; margin: 2px 0 10px; }}
+  .trend-tip {{ position: absolute; top: 8px; left: 50%; transform: translateX(-50%); background: rgba(14,22,32,0.95); border: 1px solid #2a3a4d; border-radius: 6px; padding: 8px 10px; font-size: 12px; color: #c7d5e0; pointer-events: none; opacity: 0; transition: opacity .08s; white-space: nowrap; z-index: 4; }}
+  .trend-tip .tt-title {{ font-weight: 700; color: #fff; margin-bottom: 4px; }}
+  .trend-tip .tt-row {{ display: flex; align-items: center; gap: 6px; line-height: 1.55; }}
+  .trend-tip .tt-dot {{ width: 9px; height: 9px; border-radius: 2px; flex: none; }}
   @media (max-width: 640px) {{
     header {{ padding: 16px 18px; }}
     .titlerow {{ flex-direction: column; align-items: stretch; gap: 12px; }}
