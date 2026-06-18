@@ -31,7 +31,9 @@ import store
 
 
 DATA_DIR = "data"
-DEFAULT_MAX_AGE_DAYS = 7   # reviews drift over time, so caches expire
+DEFAULT_MAX_AGE_DAYS = float(os.environ.get("MAX_AGE_DAYS", "30"))
+                           # cache lifetime; a backstop since the 20% review-
+                           # growth gate already refreshes active games on demand
 DEFAULT_MAX_REVIEWS = int(os.environ.get("MAX_REVIEWS", "300"))  # set higher to scale up
 
 
