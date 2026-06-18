@@ -1,0 +1,169 @@
+"""
+cluster_themes.py
+
+Scale-friendly theming via embeddings + k-means. Per-review LLM theme assignment
+grows linearly with review count; this path embeds every review once, groups the
+embeddings with k-means (adaptive cluster count, every review lands in a cluster),
+and makes ONE LLM call per cluster to name it (run in parallel). LLM work stays
+roughly constant regardless of review count. Classification is untouched and the
+output mirrors themes.aggregate_themes, so the report is unchanged. analyze_both
+falls back to LLM theming if anything here is unavailable or errors.
+"""
+
+import os
+from typing import Literal
+from concurrent.futures import ThreadPoolExecutor
+
+from pydantic import BaseModel
+
+from classify import ReviewCategory
+from classify_batch import MAX_REVIEW_CHARS, MAX_WORKERS
+
+
+EMBED_MODEL = "text-embedding-3-small"
+EMBED_BATCH = 256
+LABEL_SAMPLE = 8
+MIN_THEME_SIZE = 3
+MAX_THEMES_PER_SIDE = 15
+REVIEWS_PER_THEME = 50
+
+
+class ClusterLabel(BaseModel):
+    """Name/describe one cluster of reviews (one small LLM call per cluster)."""
+    name: str
+    description: str
+    kind: Literal["feature", "emotional"]
+
+
+def _openai_client():
+    """A direct OpenAI client (embeddings live outside the llm.py wrapper)."""
+    from openai import OpenAI
+    key = os.environ.get("OPENAI_API_KEY") or os.environ.get("LLM_API_KEY")
+    if not key or key.startswith("your_"):
+        raise RuntimeError("OPENAI_API_KEY is required for embedding-based theming.")
+    return OpenAI(api_key=key)
+
+
+def embed_texts(texts):
+    """Return one embedding vector per input text, in order, via OpenAI."""
+    client = _openai_client()
+    vectors = []
+    for start in range(0, len(texts), EMBED_BATCH):
+        chunk = [((t or " ").strip()[:MAX_REVIEW_CHARS] or " ")
+                 for t in texts[start:start + EMBED_BATCH]]
+        resp = client.embeddings.create(model=EMBED_MODEL, input=chunk)
+        vectors.extend(item.embedding for item in resp.data)
+    return vectors
+
+
+def _adaptive_k(n):
+    """Pick a sensible cluster count from review volume."""
+    if n < 6:
+        return 1
+    return max(3, min(MAX_THEMES_PER_SIDE, n // REVIEWS_PER_THEME))
+
+
+def cluster_vectors(vectors):
+    """Group embedding vectors with k-means; return a cluster label per vector."""
+    import numpy as np
+    from sklearn.cluster import KMeans
+    from sklearn.decomposition import PCA
+
+    X = np.asarray(vectors, dtype="float32")
+    n = len(X)
+    if n < 3:
+        return [0] * n
+
+    norms = np.linalg.norm(X, axis=1, keepdims=True)
+    norms[norms == 0] = 1.0
+    X = X / norms
+
+    if X.shape[1] > 50 and n > 10:
+        X = PCA(n_components=min(50, n - 1), random_state=0).fit_transform(X)
+
+    k = min(_adaptive_k(n), n)
+    if k <= 1:
+        return [0] * n
+    return KMeans(n_clusters=k, n_init=10, random_state=0).fit_predict(X).tolist()
+
+
+def _majority_category(reviews):
+    """The most common per-review category in a cluster (from classification)."""
+    counts = {}
+    for r in reviews:
+        c = r.get("category", "other")
+        counts[c] = counts.get(c, 0) + 1
+    return max(counts, key=counts.get) if counts else "other"
+
+
+def _label_cluster(client, reviews, category):
+    """Ask the LLM to name/describe a single cluster from a few representatives."""
+    from llm import generate_json
+
+    sample = sorted(
+        reviews,
+        key=lambda r: (r.get("helpful_votes", 0), r.get("playtime_at_review_hours", 0)),
+        reverse=True,
+    )[:LABEL_SAMPLE]
+    block = "\n".join(f"- {(r.get('text') or '').strip()[:MAX_REVIEW_CHARS]}" for r in sample)
+
+    prompt = (
+        "These player reviews of one video game all describe the SAME specific "
+        f"theme (rough category: {category}).\n\n"
+        "Give a short, SPECIFIC name (3-6 words), a one-line description, and a "
+        "'kind': use feature if the theme is a specific, actionable aspect "
+        "(a system, mechanic, bug, or piece of content) or emotional if it is "
+        "general sentiment, mood, nostalgia, or a farewell.\n\n"
+        f"Reviews:\n{block}"
+    )
+    return generate_json(client, prompt, ClusterLabel)
+
+
+def theme_group_embed(client, reviews):
+    """Theme one polarity group by embedding + k-means + per-cluster labeling."""
+    from themes import ThemeDef, aggregate_themes, UNCLEAR_LABEL
+
+    if not reviews:
+        return []
+
+    vectors = embed_texts([r.get("text", "") for r in reviews])
+    labels = cluster_vectors(vectors)
+
+    clusters = {}
+    for idx, lab in enumerate(labels):
+        clusters.setdefault(int(lab), []).append(reviews[idx])
+
+    real = {lab: m for lab, m in clusters.items() if len(m) >= MIN_THEME_SIZE}
+    for lab, members in clusters.items():
+        if lab not in real:
+            for r in members:
+                r["theme"] = UNCLEAR_LABEL
+
+    def label(item):
+        lab, members = item
+        category = _majority_category(members)
+        try:
+            res = _label_cluster(client, members, category)
+            name = (res.name or "").strip() or f"theme {lab}"
+            return members, name, res.description, res.kind, category
+        except Exception as err:
+            print(f"  Cluster label failed ({err}); using a generic name.")
+            return members, f"theme {lab}", "", "feature", category
+
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
+        labeled = list(pool.map(label, real.items()))
+
+    theme_defs = []
+    used_names = set()
+    for members, name, description, kind, category in labeled:
+        base, n = name, 2
+        while name.lower() in used_names:
+            name = f"{base} ({n})"
+            n += 1
+        used_names.add(name.lower())
+        for r in members:
+            r["theme"] = name
+        theme_defs.append(ThemeDef(name=name, description=description,
+                                   category=category, kind=kind))
+
+    return aggregate_themes(reviews, theme_defs)

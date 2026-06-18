@@ -31,6 +31,7 @@ import store
 
 DATA_DIR = "data"
 DEFAULT_MAX_AGE_DAYS = 7   # reviews drift over time, so caches expire
+DEFAULT_MAX_REVIEWS = int(os.environ.get("MAX_REVIEWS", "300"))  # set higher to scale up
 
 
 def cache_paths(app_id: str) -> dict:
@@ -68,7 +69,7 @@ def _attach_review_urls(analysis: dict, app_id: str) -> None:
     add(analysis.get("noise", {}).get("examples"))
 
 
-def get_analysis(app_id: str, max_reviews: int = 300, refresh: bool = False,
+def get_analysis(app_id: str, max_reviews: int = DEFAULT_MAX_REVIEWS, refresh: bool = False,
                  max_age_days: float = DEFAULT_MAX_AGE_DAYS, progress=None) -> dict:
     """
     Return the combined analysis for a game (negative + positive themes), from
@@ -130,7 +131,7 @@ def get_analysis(app_id: str, max_reviews: int = 300, refresh: bool = False,
     return analysis
 
 
-def run(app_id: str, title: str = None, max_reviews: int = 300, refresh: bool = False,
+def run(app_id: str, title: str = None, max_reviews: int = DEFAULT_MAX_REVIEWS, refresh: bool = False,
         max_age_days: float = DEFAULT_MAX_AGE_DAYS, out: str = "steamsifter_report.html") -> str:
     """Run (or reuse) the analysis and write the combined HTML report."""
     title = title or f"App {app_id}"
