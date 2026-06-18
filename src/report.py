@@ -521,9 +521,9 @@ CHARTS_JS = """
         layout: { padding: { top: 16 } },
         scales: {
           x: { grid: { color: '#233040' } },
-          y: { grid: { color: '#233040' }, beginAtZero: true, grace: '50%', ticks: { precision: 0 },
+          y: { grid: { color: '#233040' }, beginAtZero: true, grace: '12%', ticks: { precision: 0 },
                title: { display: !narrow, text: 'by sentiment' } },
-          yVol: { position: 'right', grid: { display: false }, beginAtZero: true, grace: '50%',
+          yVol: { position: 'right', grid: { display: false }, beginAtZero: true, grace: '12%',
                   ticks: { precision: 0 }, title: { display: !narrow, text: 'total reviews' } }
         },
         plugins: {
@@ -716,7 +716,7 @@ def build_html(analysis: dict, title: str, refresh_state: dict = None) -> str:
   .donut-hint {{ font-size: 11px; color: #8f98a0; margin-top: 6px; }}
   .trend-wrap {{ position: relative; height: 300px; background: rgba(22, 32, 45, 0.72); border: 1px solid #2a3a4d; border-radius: 6px; padding: 12px; }}
   .trend-sub {{ font-size: 12px; color: #8f98a0; margin: 2px 0 10px; }}
-  .trend-tip {{ position: absolute; top: 2px; left: 50%; transform: translateX(-50%); background: rgba(14,22,32,0.78); border: 1px solid #2a3a4d; border-radius: 6px; padding: 7px 10px; font-size: 12px; color: #c7d5e0; pointer-events: none; opacity: 0; transition: opacity .08s; white-space: nowrap; z-index: 4; }}
+  .trend-tip {{ position: absolute; top: auto; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%); background: rgba(14,22,32,0.78); border: 1px solid #2a3a4d; border-radius: 6px; padding: 7px 10px; font-size: 12px; color: #c7d5e0; pointer-events: none; opacity: 0; transition: opacity .08s; white-space: nowrap; z-index: 10; }}
   .trend-tip .tt-title {{ font-weight: 700; color: #fff; margin-bottom: 4px; }}
   .trend-tip .tt-row {{ display: flex; align-items: center; gap: 6px; line-height: 1.4; }}
   .trend-tip .tt-dot {{ width: 9px; height: 9px; border-radius: 2px; flex: none; }}
