@@ -177,9 +177,15 @@ def render_example(example: dict) -> str:
         quote_html = f'<span class="quote">&ldquo;{text}&rdquo;</span>'
         source = ''
 
+    # English translation line for foreign-language reviews (when present).
+    translation = example.get("translation")
+    trans_html = (f'<div class="translation">EN: &ldquo;{esc(translation)}&rdquo;</div>'
+                  if translation else '')
+
     return (
         '<div class="example">'
         f'{quote_html}'
+        f'{trans_html}'
         '<span class="badges">'
         f'{thumb}'
         f'<span class="badge">{hours:g}h played</span>'
@@ -593,6 +599,7 @@ def build_html(analysis: dict, title: str, refresh_state: dict = None) -> str:
   .description {{ font-size: 14px; color: #acb2b8; margin: 0 0 12px; }}
   .example {{ border-left: 3px solid #2a475e; padding: 4px 0 4px 12px; margin: 8px 0; }}
   .quote {{ font-style: italic; color: #c7d5e0; font-size: 13px; }}
+  .translation {{ font-size: 12px; color: #8f98a0; margin: 3px 0 0; }}
   .badges {{ display: block; margin-top: 4px; }}
   .badge {{ display: inline-block; font-size: 11px; background: #2a3f5a; color: #c7d5e0; border-radius: 3px; padding: 1px 7px; margin-right: 6px; }}
   .unclear {{ background: #16202d; border: 1px solid #2a475e; border-left: 3px solid #66c0f4; border-radius: 3px; padding: 14px 16px; font-size: 14px; color: #8f98a0; margin-top: 10px; }}

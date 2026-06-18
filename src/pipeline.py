@@ -21,7 +21,8 @@ import json
 import os
 import time
 
-from llm import get_client
+from llm import get_client, generate_json
+from pydantic import BaseModel
 from fetch_reviews import fetch_reviews, save_reviews, fetch_review_total
 from classify_batch import classify_all, save_classified
 from themes import analyze_both
@@ -67,6 +68,47 @@ def _attach_review_urls(analysis: dict, app_id: str) -> None:
     for rec in analysis.get("positive", []):
         add(rec.get("examples"))
     add(analysis.get("noise", {}).get("examples"))
+
+
+class _Translation(BaseModel):
+    """One example quote translated to English (batched call below)."""
+    index: int
+    english: str
+
+
+def _looks_foreign(text: str) -> bool:
+    """Heuristic: True if the text is mostly non-Latin letters (Cyrillic, CJK, etc.)."""
+    letters = [c for c in (text or "") if c.isalpha()]
+    if len(letters) < 3:
+        return False
+    non_ascii = sum(1 for c in letters if ord(c) > 127)
+    return non_ascii / len(letters) > 0.3
+
+
+def _attach_translations(analysis: dict, client) -> None:
+    """Add an English 'translation' to foreign-language example quotes (one call)."""
+    examples = []
+    for rec in analysis.get("negative", []) + analysis.get("positive", []):
+        if rec.get("theme") in ("noise", "unclear"):
+            continue
+        examples.extend(rec.get("examples", []))
+
+    targets = [ex for ex in examples if _looks_foreign(ex.get("text", ""))]
+    if not targets:
+        return
+
+    numbered = "\n".join(f"{i}: {ex.get('text', '')[:300]}" for i, ex in enumerate(targets))
+    prompt = (
+        "Translate each of these short Steam game reviews into natural, concise "
+        "English. Return each review's index and its English translation.\n\n"
+        f"{numbered}"
+    )
+    results = generate_json(client, prompt, list[_Translation]) or []
+    by_index = {r.index: r.english for r in results}
+    for i, ex in enumerate(targets):
+        english = by_index.get(i)
+        if english:
+            ex["translation"] = english.strip()
 
 
 def get_analysis(app_id: str, max_reviews: int = DEFAULT_MAX_REVIEWS, refresh: bool = False,
@@ -119,6 +161,12 @@ def get_analysis(app_id: str, max_reviews: int = DEFAULT_MAX_REVIEWS, refresh: b
 
     # Attach each example review's Steam permalink so users can verify it is real.
     _attach_review_urls(analysis, app_id)
+
+    # Translate any foreign-language example quotes to English (best-effort).
+    try:
+        _attach_translations(analysis, client)
+    except Exception as err:
+        print(f"Translation step failed ({err}); continuing without translations.")
 
     # Record the game's true total review count, for the review-growth refresh gate.
     analysis["steam_total_reviews"] = fetch_review_total(app_id) or analysis.get("total_reviews", 0)
