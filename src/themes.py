@@ -30,7 +30,8 @@ from pydantic import BaseModel
 # Reuse our client/helper, the category type, and the batching settings.
 from llm import get_client, generate_json
 from classify import ReviewCategory
-from classify_batch import BATCH_SIZE, DELAY_BETWEEN_BATCHES, MAX_REVIEW_CHARS
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from classify_batch import BATCH_SIZE, DELAY_BETWEEN_BATCHES, MAX_REVIEW_CHARS, MAX_WORKERS
 
 
 # ----------------------------------------------------------------------------
@@ -143,12 +144,35 @@ def build_assignment_prompt(texts: list, themes: list) -> str:
     )
 
 
+def _assign_one(client, batch: list, themes: list, canonical: dict) -> None:
+    """Assign one batch of reviews to themes, writing 'theme' onto each in place."""
+    prompt = build_assignment_prompt([r["text"] for r in batch], themes)
+
+    # One retry on failure (e.g. a rate-limit blip), mirroring the classifier.
+    results = []
+    for attempt in range(1, 3):
+        try:
+            results = generate_json(client, prompt, list[ThemeAssignment]) or []
+            break
+        except Exception as err:
+            print(f"  Assign batch failed (attempt {attempt}): {err}")
+            time.sleep(DELAY_BETWEEN_BATCHES * attempt)
+
+    by_index = {a.index: a for a in results}
+    for i, review in enumerate(batch):
+        assignment = by_index.get(i)
+        review["theme"] = (canonical.get(assignment.theme.lower(), UNCLEAR_LABEL)
+                           if assignment is not None else UNCLEAR_LABEL)
+
+
 def assign_themes(client, reviews: list, themes: list) -> list:
     """
-    Label every review with one of the discovered themes, in batches.
+    Label every review with one of the discovered themes.
 
-    The model returns theme names as free text, so we normalize each one back to
-    a known theme (case-insensitive). Anything unrecognized becomes 'unclear'.
+    Assignment batches run CONCURRENTLY (a thread pool of MAX_WORKERS), since each
+    is just an independent API call. The model returns theme names as free text,
+    so we normalize each back to a known theme; anything unrecognized becomes
+    'unclear'. Reviews are labeled in place, preserving order.
 
     Returns:
         The same reviews, each with a new 'theme' field.
@@ -156,41 +180,14 @@ def assign_themes(client, reviews: list, themes: list) -> list:
     # Lookup table: lowercase theme name -> canonical name.
     canonical = {t.name.lower(): t.name for t in themes}
 
-    total = len(reviews)
-    total_batches = (total + BATCH_SIZE - 1) // BATCH_SIZE
+    batches = [reviews[s:s + BATCH_SIZE] for s in range(0, len(reviews), BATCH_SIZE)]
+    print(f"Assigning {len(reviews)} reviews to themes in {len(batches)} batches "
+          f"({MAX_WORKERS} at a time)...")
 
-    for start in range(0, total, BATCH_SIZE):
-        batch = reviews[start:start + BATCH_SIZE]
-        texts = [r["text"] for r in batch]
-
-        batch_num = (start // BATCH_SIZE) + 1
-        print(f"Assigning themes, batch {batch_num}/{total_batches} "
-              f"(reviews {start + 1}-{start + len(batch)})...")
-
-        prompt = build_assignment_prompt(texts, themes)
-
-        # One retry on failure (e.g. rate limit), mirroring the classifier.
-        results = []
-        for attempt in range(1, 3):
-            try:
-                results = generate_json(client, prompt, list[ThemeAssignment]) or []
-                break
-            except Exception as err:
-                print(f"  Batch failed (attempt {attempt}): {err}")
-                time.sleep(DELAY_BETWEEN_BATCHES * attempt)
-
-        by_index = {a.index: a for a in results}
-
-        # Attach a normalized theme name to each review in the batch.
-        for i, review in enumerate(batch):
-            assignment = by_index.get(i)
-            if assignment is not None:
-                review["theme"] = canonical.get(assignment.theme.lower(), UNCLEAR_LABEL)
-            else:
-                review["theme"] = UNCLEAR_LABEL
-
-        if start + BATCH_SIZE < total:
-            time.sleep(DELAY_BETWEEN_BATCHES)
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
+        futures = [pool.submit(_assign_one, client, b, themes, canonical) for b in batches]
+        for fut in as_completed(futures):
+            fut.result()
 
     return reviews
 

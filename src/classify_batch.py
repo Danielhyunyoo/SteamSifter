@@ -17,6 +17,8 @@ import argparse
 import json
 import os
 import time
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Literal
 
 from pydantic import BaseModel
@@ -30,9 +32,13 @@ from classify import ReviewCategory
 # Tuning knobs
 # ----------------------------------------------------------------------------
 
-BATCH_SIZE = 50                 # reviews sent per API call (bigger = fewer calls,
-                                # which matters a lot given low free-tier daily quotas)
-DELAY_BETWEEN_BATCHES = 4.5     # seconds to wait between calls (stay under ~15 RPM)
+BATCH_SIZE = 25                 # reviews per API call; smaller batches return
+                                # faster and overlap better when run concurrently
+MAX_WORKERS = int(os.environ.get("LLM_MAX_WORKERS", "8"))
+                                # how many batch calls run at once. Paid OpenAI
+                                # handles this easily; set LLM_MAX_WORKERS=1-2 for a
+                                # free Gemini key to respect its low requests/min.
+DELAY_BETWEEN_BATCHES = 2.0     # backoff base, used only when a call fails (e.g. 429)
 MAX_REVIEW_CHARS = 500          # truncate very long reviews to control token use
 MAX_RETRIES = 3                 # retries when a batch call fails (e.g. throttled)
 
@@ -130,59 +136,56 @@ def classify_batch(client, texts: list) -> list:
 # Classifying a whole list of reviews
 # ----------------------------------------------------------------------------
 
+def _classify_one(client, batch: list) -> None:
+    """Classify one batch and write the labels onto its review dicts in place."""
+    results = classify_batch(client, [r["text"] for r in batch])
+    by_index = {r.index: r for r in results}
+    for i, review in enumerate(batch):
+        label = by_index.get(i)
+        if label is not None:
+            review["sentiment"] = label.sentiment
+            review["category"] = label.category
+            review["is_constructive"] = label.is_constructive
+        else:
+            # Fallback: we still know if Steam marked the review up or down.
+            review["sentiment"] = "positive" if review.get("voted_up") else "negative"
+            review["category"] = "other"
+            review["is_constructive"] = True   # don't filter what we are unsure about
+
+
 def classify_all(client, reviews: list, on_progress=None) -> list:
     """
-    Classify every review, in batches, and attach sentiment + category to each.
+    Classify every review and attach sentiment + category + is_constructive.
 
-    Args:
-        client:  An LLM client from get_client().
-        reviews: The list of review dicts (from the fetch step).
+    Batches are sent CONCURRENTLY (a thread pool of MAX_WORKERS). Each batch just
+    waits on the API, so overlapping them collapses many sequential calls into
+    roughly one call's worth of wall-time. Reviews are labeled in place, so the
+    original order is preserved.
 
     Returns:
-        The same reviews, each with new 'sentiment' and 'category' fields added.
+        The same reviews list, each enriched with classification fields.
     """
     total = len(reviews)
-    enriched = []
+    if total == 0:
+        return reviews
 
-    # Walk through the reviews in chunks of BATCH_SIZE.
-    for start in range(0, total, BATCH_SIZE):
-        batch = reviews[start:start + BATCH_SIZE]
-        texts = [r["text"] for r in batch]
+    batches = [reviews[s:s + BATCH_SIZE] for s in range(0, total, BATCH_SIZE)]
+    total_batches = len(batches)
+    print(f"Classifying {total} reviews in {total_batches} batches "
+          f"({MAX_WORKERS} at a time)...")
 
-        batch_num = (start // BATCH_SIZE) + 1
-        total_batches = (total + BATCH_SIZE - 1) // BATCH_SIZE
-        print(f"Classifying batch {batch_num}/{total_batches} "
-              f"(reviews {start + 1}-{start + len(batch)})...")
+    done = 0
+    lock = threading.Lock()
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
+        futures = [pool.submit(_classify_one, client, b) for b in batches]
+        for fut in as_completed(futures):
+            fut.result()   # surface any unexpected error
+            with lock:
+                done += 1
+                if on_progress:
+                    on_progress(done / total_batches)
 
-        results = classify_batch(client, texts)
-
-        # Index the model's answers by their batch index for easy lookup.
-        by_index = {r.index: r for r in results}
-
-        # Attach the classification to each review. If the model skipped one,
-        # fall back to a neutral/other label and the known voted_up sentiment.
-        for i, review in enumerate(batch):
-            label = by_index.get(i)
-            if label is not None:
-                review["sentiment"] = label.sentiment
-                review["category"] = label.category
-                review["is_constructive"] = label.is_constructive
-            else:
-                # Fallback: we still know if Steam marked it up or down.
-                review["sentiment"] = "positive" if review.get("voted_up") else "negative"
-                review["category"] = "other"
-                review["is_constructive"] = True  # don't filter what we are unsure about
-            enriched.append(review)
-
-        # Report progress as a fraction in [0, 1] (longest phase = smooth bar).
-        if on_progress:
-            on_progress(batch_num / total_batches)
-
-        # Pause between batches to respect the free-tier rate limit.
-        if start + BATCH_SIZE < total:
-            time.sleep(DELAY_BETWEEN_BATCHES)
-
-    return enriched
+    return reviews
 
 
 def save_classified(reviews: list, source_file: str) -> str:
