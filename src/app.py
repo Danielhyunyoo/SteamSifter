@@ -13,6 +13,7 @@ Run it:
 Then open http://127.0.0.1:5000 in your browser.
 """
 
+import html
 import math
 import os
 import threading
@@ -103,6 +104,7 @@ HOME_PAGE = """<!DOCTYPE html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2366c0f4' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><circle cx='11' cy='11' r='7'/><line x1='21' y1='21' x2='16.65' y2='16.65'/></svg>">
 <title>SteamSifter</title>
 <style>
   * { box-sizing: border-box; }
@@ -210,6 +212,77 @@ def api_search():
     return jsonify(search_games(request.args.get("q", "")))
 
 
+EMPTY_PAGE = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2366c0f4' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><circle cx='11' cy='11' r='7'/><line x1='21' y1='21' x2='16.65' y2='16.65'/></svg>">
+<title>No reviews | SteamSifter</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; min-height: 100vh;
+         display: flex; align-items: center; justify-content: center;
+         background: linear-gradient(to bottom, #1b2838, #16202d) fixed; color: #c7d5e0; }
+  .hero-inner { width: 100%; max-width: 520px; padding: 24px; text-align: center; }
+  .brand { color: #66c0f4; letter-spacing: 3px; text-transform: uppercase; font-size: 13px; }
+  h1 { margin: 10px 0 6px; font-size: 28px; color: #fff; }
+  p.sub { color: #8f98a0; margin: 0 0 22px; }
+  .search { position: relative; text-align: left; }
+  input[type=text] { width: 100%; padding: 14px 16px; font-size: 16px; border-radius: 8px; border: 1px solid #2a475e; background: #16202d; color: #fff; }
+  .results { position: absolute; left: 0; right: 0; top: 56px; background: #16202d; border: 1px solid #2a475e; border-radius: 8px; overflow: hidden; z-index: 5; }
+  .result { display: flex; align-items: center; gap: 12px; padding: 10px 12px; cursor: pointer; }
+  .result:hover { background: #1f3346; }
+  .result img { width: 60px; height: 23px; object-fit: cover; border-radius: 3px; background: #0e1620; }
+  .result span { font-size: 14px; color: #c7d5e0; }
+  .hint { margin-top: 18px; font-size: 13px; }
+  .hint a { color: #66c0f4; text-decoration: none; }
+</style>
+</head>
+<body>
+  <div class="hero-inner">
+    <div class="brand">SteamSifter</div>
+    <h1>Nothing to sift here :C</h1>
+    <p class="sub"><strong>__TITLE__</strong> has no Steam reviews to analyze yet. Pick another game and let's dig in.</p>
+    <div class="search">
+      <input id="q" type="text" placeholder="Search a game, e.g. Counter-Strike" autocomplete="off" autofocus>
+      <div id="results" class="results" style="display:none"></div>
+    </div>
+    <div class="hint"><a href="/">Back to home</a></div>
+  </div>
+<script>
+  const input = document.getElementById('q');
+  const results = document.getElementById('results');
+  let timer = null;
+  input.addEventListener('input', () => {
+    clearTimeout(timer);
+    const q = input.value.trim();
+    if (!q) { results.style.display = 'none'; return; }
+    timer = setTimeout(() => fetchSuggestions(q), 250);
+  });
+  async function fetchSuggestions(q) {
+    try {
+      const resp = await fetch('/api/search?q=' + encodeURIComponent(q));
+      renderSuggestions(await resp.json());
+    } catch (e) { results.style.display = 'none'; }
+  }
+  function renderSuggestions(games) {
+    if (!games.length) { results.style.display = 'none'; return; }
+    results.innerHTML = '';
+    games.forEach(g => {
+      const row = document.createElement('div');
+      row.className = 'result';
+      row.innerHTML = (g.image ? '<img src="' + g.image + '">' : '<img>') + '<span>' + g.name + '</span>';
+      row.onclick = () => { window.location = '/analyzing?appid=' + g.appid + '&title=' + encodeURIComponent(g.name); };
+      results.appendChild(row);
+    });
+    results.style.display = 'block';
+  }
+</script>
+</body>
+</html>"""
+
+
 @app.route("/analyze")
 @limiter.limit("40 per hour")
 def analyze():
@@ -222,6 +295,11 @@ def analyze():
 
     # get_analysis uses the cache, so repeat lookups are instant and free.
     analysis = get_analysis(appid)
+
+    # No reviews to analyze: show a friendly empty-state page, not an all-zeros report.
+    if not analysis.get("total_reviews"):
+        return Response(EMPTY_PAGE.replace("__TITLE__", html.escape(title)),
+                        mimetype="text/html")
 
     # Tell the report whether a force-refresh is available right now, so the
     # button renders enabled, on cooldown, or in admin mode.
@@ -300,6 +378,7 @@ ANALYZING_PAGE = """<!DOCTYPE html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2366c0f4' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><circle cx='11' cy='11' r='7'/><line x1='21' y1='21' x2='16.65' y2='16.65'/></svg>">
 <title>Analyzing... | SteamSifter</title>
 <style>
   * { box-sizing: border-box; }
@@ -490,6 +569,7 @@ ABOUT_PAGE = """<!DOCTYPE html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2366c0f4' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><circle cx='11' cy='11' r='7'/><line x1='21' y1='21' x2='16.65' y2='16.65'/></svg>">
 <title>About | SteamSifter</title>
 <style>
   * { box-sizing: border-box; }
@@ -582,6 +662,7 @@ ADMIN_PAGE = """<!DOCTYPE html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2366c0f4' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><circle cx='11' cy='11' r='7'/><line x1='21' y1='21' x2='16.65' y2='16.65'/></svg>">
 <title>Owner sign-in | SteamSifter</title>
 <style>
   * { box-sizing: border-box; }

@@ -27,7 +27,7 @@ CATEGORY_COLORS = {
     "cheating": "#c678dd",
     "community": "#56b6c2",
     "monetization": "#e5c07b",
-    "content": "#98c379",
+    "content": "#d977b8",
     "ui_ux": "#abb2bf",
     "praise": "#98c379",
     "other": "#7f848e",
@@ -316,6 +316,7 @@ def render_overview(sentiment_totals: dict, total_reviews: int, noise_count: int
         f'<div class="legend">{legend}</div>'
         '<div class="ov-title">By category <span class="ov-sub">share of categorized reviews</span></div>'
         '<div class="donut-wrap"><canvas id="catDonut"></canvas></div>'
+        '<div class="donut-hint">Tip: click a category in the legend to show or hide it.</div>'
         f'{filtered_line}'
         '</div>'
     )
@@ -483,7 +484,8 @@ CHARTS_JS = """
                   ticks: { precision: 0 }, title: { display: !narrow, text: 'total reviews' } }
         },
         plugins: {
-          legend: { labels: { boxWidth: 12, padding: 12 } }
+          legend: { labels: { boxWidth: 12, padding: 12 } },
+          tooltip: { yAlign: 'bottom' }
         }
       }
     });
@@ -576,6 +578,7 @@ def build_html(analysis: dict, title: str, refresh_state: dict = None) -> str:
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2366c0f4' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><circle cx='11' cy='11' r='7'/><line x1='21' y1='21' x2='16.65' y2='16.65'/></svg>">
 <title>SteamSifter Report: {esc(title)}</title>
 <style>
   * {{ box-sizing: border-box; }}
@@ -665,6 +668,7 @@ def build_html(analysis: dict, title: str, refresh_state: dict = None) -> str:
   .stat-value.good {{ color: #98c379; }}
   .stat-value.bad {{ color: #e06c75; }}
   .donut-wrap {{ position: relative; height: 240px; margin: 6px 0 2px; }}
+  .donut-hint {{ font-size: 11px; color: #8f98a0; margin-top: 6px; }}
   .trend-wrap {{ position: relative; height: 270px; background: #16202d; border: 1px solid #2a3a4d; border-radius: 6px; padding: 12px; }}
   .trend-sub {{ font-size: 12px; color: #8f98a0; margin: 2px 0 10px; }}
   @media (max-width: 640px) {{
