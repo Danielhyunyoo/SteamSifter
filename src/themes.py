@@ -43,10 +43,14 @@ TARGET_THEME_COUNT = "8 to 12" # how many themes we ask the model to produce
 EXAMPLES_PER_THEME = 2         # representative quotes to keep per theme
 UNCLEAR_LABEL = "unclear"      # fallback when a review fits no discovered theme
 
-# Theming method: "llm" (default) assigns every review with the LLM; "embed"
-# uses embeddings + k-means clustering (scales to far more reviews). Embed
-# falls back to llm automatically if it is unavailable or errors.
+# Theming method:
+#   "llm"   assign every review with the LLM (richest themes; best for small sets)
+#   "embed" embeddings + k-means clustering (bounded cost; best at large scale)
+#   "auto"  pick per game: llm when few constructive reviews, embed when many
+# Embed falls back to llm automatically if it is unavailable or errors.
 THEME_METHOD = os.environ.get("THEME_METHOD", "llm").lower()
+AUTO_EMBED_MIN = int(os.environ.get("AUTO_EMBED_MIN", "250"))  # constructive-review
+                                # threshold at which "auto" switches llm -> embed
 
 
 # ----------------------------------------------------------------------------
@@ -392,11 +396,18 @@ def analyze_both(client, classified: list, on_progress=None) -> dict:
     negative = [r for r in constructive if r.get("sentiment") in ("negative", "neutral")]
     positive = [r for r in constructive if r.get("sentiment") == "positive"]
 
+    # Resolve "auto" once per report: embed only pays off when there are enough
+    # constructive reviews; below the threshold the LLM path is faster and richer.
+    method = THEME_METHOD
+    if method == "auto":
+        method = "embed" if len(constructive) >= AUTO_EMBED_MIN else "llm"
+        print(f"Auto theming: {len(constructive)} constructive reviews -> {method}")
+
     def theme_group(group, label):
         if not group:
             return []
-        print(f"Theming {label} reviews ({len(group)}) via {THEME_METHOD}...")
-        if THEME_METHOD == "embed":
+        print(f"Theming {label} reviews ({len(group)}) via {method}...")
+        if method == "embed":
             try:
                 from cluster_themes import theme_group_embed
                 return theme_group_embed(client, group)
