@@ -444,8 +444,33 @@ CHARTS_JS = """
              '"></span>' + b.lines.join(' ') + '</div>';
     }).join('');
     tip.innerHTML = '<div class="tt-title">' + title + '</div>' + rows;
+    // Follow the cursor horizontally; vertical position stays fixed at the top.
+    var canvas = context.chart.canvas;
+    var wrapW = tip.parentNode.clientWidth;
+    var half = tip.offsetWidth / 2;
+    var x = canvas.offsetLeft + model.caretX;
+    x = Math.max(half + 4, Math.min(x, wrapW - half - 4));
+    tip.style.left = x + 'px';
     tip.style.opacity = '1';
   }
+
+  // Vertical crosshair line at the hovered x, through all three series.
+  var trendCrosshair = {
+    id: 'trendCrosshair',
+    afterDatasetsDraw: function (chart) {
+      var tt = chart.tooltip;
+      if (!tt || tt.opacity === 0) return;
+      var ctx = chart.ctx, x = tt.caretX;
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(x, chart.chartArea.top);
+      ctx.lineTo(x, chart.chartArea.bottom);
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = 'rgba(199,213,224,0.35)';
+      ctx.stroke();
+      ctx.restore();
+    }
+  };
 
   // Category donut.
   var d = data.donut, dc = document.getElementById('catDonut');
@@ -505,7 +530,8 @@ CHARTS_JS = """
           legend: { labels: { boxWidth: 12, padding: 12 } },
           tooltip: { enabled: false, external: externalTrendTip }
         }
-      }
+      },
+      plugins: [trendCrosshair]
     });
   }
 })();
