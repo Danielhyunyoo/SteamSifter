@@ -23,7 +23,7 @@ import time
 
 from llm import get_client, generate_json
 from pydantic import BaseModel
-from fetch_reviews import fetch_reviews, save_reviews, fetch_review_total
+from fetch_reviews import fetch_reviews, save_reviews, fetch_review_total, fetch_player_summaries
 from classify_batch import classify_all, save_classified
 from themes import analyze_both
 from report import build_html
@@ -111,6 +111,24 @@ def _attach_translations(analysis: dict, client) -> None:
             ex["translation"] = english.strip()
 
 
+def _attach_authors(analysis: dict) -> None:
+    """Attach each example reviewer's Steam avatar + username (best-effort)."""
+    examples = []
+    for rec in analysis.get("negative", []) + analysis.get("positive", []):
+        if rec.get("theme") in ("noise", "unclear"):
+            continue
+        examples.extend(rec.get("examples", []))
+
+    summaries = fetch_player_summaries([ex.get("steamid") for ex in examples])
+    if not summaries:
+        return
+    for ex in examples:
+        info = summaries.get(ex.get("steamid"))
+        if info:
+            ex["author_name"] = info["name"]
+            ex["author_avatar"] = info["avatar"]
+
+
 def get_analysis(app_id: str, max_reviews: int = DEFAULT_MAX_REVIEWS, refresh: bool = False,
                  max_age_days: float = DEFAULT_MAX_AGE_DAYS, progress=None) -> dict:
     """
@@ -167,6 +185,12 @@ def get_analysis(app_id: str, max_reviews: int = DEFAULT_MAX_REVIEWS, refresh: b
         _attach_translations(analysis, client)
     except Exception as err:
         print(f"Translation step failed ({err}); continuing without translations.")
+
+    # Attach reviewer avatar + username so identical quotes read as distinct people.
+    try:
+        _attach_authors(analysis)
+    except Exception as err:
+        print(f"Author lookup failed ({err}); continuing without avatars.")
 
     # Record the game's true total review count, for the review-growth refresh gate.
     analysis["steam_total_reviews"] = fetch_review_total(app_id) or analysis.get("total_reviews", 0)

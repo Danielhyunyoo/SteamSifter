@@ -212,6 +212,44 @@ def fetch_review_total(app_id: str, language: str = "english") -> int:
 
 
 # ----------------------------------------------------------------------------
+# Reviewer profiles: avatar + username (so identical quotes read as distinct people)
+# ----------------------------------------------------------------------------
+
+PLAYER_SUMMARY_URL = "https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/"
+
+
+def fetch_player_summaries(steamids: list) -> dict:
+    """
+    Return {steamid: {"name": str, "avatar": url}} for the given Steam IDs.
+
+    Uses the Steam Web API (GetPlayerSummaries), which needs a free STEAM_API_KEY.
+    Returns {} if the key is missing or on any failure, so this is best-effort.
+    Batched up to 100 ids per request.
+    """
+    key = os.environ.get("STEAM_API_KEY")
+    ids = [s for s in dict.fromkeys(steamids) if s]   # de-dupe, drop blanks
+    if not key or not ids:
+        return {}
+
+    out = {}
+    for start in range(0, len(ids), 100):
+        params = {"key": key, "steamids": ",".join(ids[start:start + 100])}
+        try:
+            resp = requests.get(PLAYER_SUMMARY_URL, params=params,
+                                headers=HEADERS, timeout=REQUEST_TIMEOUT)
+            resp.raise_for_status()
+            players = resp.json().get("response", {}).get("players", [])
+        except (requests.RequestException, ValueError):
+            continue
+        for pl in players:
+            out[pl.get("steamid")] = {
+                "name": pl.get("personaname", ""),
+                "avatar": pl.get("avatarmedium") or pl.get("avatar", ""),
+            }
+    return out
+
+
+# ----------------------------------------------------------------------------
 # Saving: write the cleaned reviews to data/ as JSON
 # ----------------------------------------------------------------------------
 
