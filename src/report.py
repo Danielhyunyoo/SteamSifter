@@ -429,6 +429,16 @@ CHARTS_JS = """
   Chart.defaults.color = '#8f98a0';
   Chart.defaults.font.family = '-apple-system, Segoe UI, Roboto, sans-serif';
 
+  // Pin the trend tooltip above the highest visible point at the hovered x.
+  if (Chart.Tooltip && Chart.Tooltip.positioners) {
+    Chart.Tooltip.positioners.aboveTop = function (items) {
+      if (!items.length) return false;
+      var x = items[0].element.x;
+      var topY = Math.min.apply(null, items.map(function (it) { return it.element.y; }));
+      return { x: x, y: topY };
+    };
+  }
+
   // Category donut.
   var d = data.donut, dc = document.getElementById('catDonut');
   if (dc && d && d.values.length) {
@@ -475,7 +485,7 @@ CHARTS_JS = """
       options: {
         responsive: true, maintainAspectRatio: false,
         interaction: { mode: 'index', intersect: false },
-        layout: { padding: { top: 12 } },
+        layout: { padding: { top: 36 } },
         scales: {
           x: { grid: { color: '#233040' } },
           y: { grid: { color: '#233040' }, beginAtZero: true, ticks: { precision: 0 },
@@ -485,7 +495,7 @@ CHARTS_JS = """
         },
         plugins: {
           legend: { labels: { boxWidth: 12, padding: 12 } },
-          tooltip: { yAlign: 'bottom' }
+          tooltip: { position: 'aboveTop', yAlign: 'bottom', caretPadding: 6 }
         }
       }
     });
