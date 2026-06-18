@@ -240,9 +240,21 @@ def analyze():
 # Background analysis jobs (so the page can show a real progress bar)
 # ----------------------------------------------------------------------------
 
-# In-memory job registry. Fine for single-process dev; a real deployment would
-# use a shared store (parked with the concurrency work).
+# In-memory job registry. Fine for single-process dev; a multi-worker deploy
+# would move this to a shared store (V6 multi-worker item).
 JOBS = {}
+ACTIVE = {}                 # appid -> in-flight job id, for de-duplication
+JOBS_LOCK = threading.Lock()
+JOB_TTL = 600               # seconds to keep a finished job before pruning it
+
+
+def _prune_jobs():
+    """Drop finished jobs older than JOB_TTL. Call while holding JOBS_LOCK."""
+    now = time.time()
+    stale = [jid for jid, j in JOBS.items()
+             if j.get("done") and (now - j.get("finished_at", now)) > JOB_TTL]
+    for jid in stale:
+        JOBS.pop(jid, None)
 
 
 def _run_job(job_id, appid, refresh=False):
@@ -255,12 +267,30 @@ def _run_job(job_id, appid, refresh=False):
         JOBS[job_id].update(percent=100, message="Done", done=True)
     except Exception as e:
         JOBS[job_id].update(error=str(e), done=True)
+    finally:
+        # Mark completion time (for pruning) and release the app id so future
+        # requests can start a fresh job once this one is finished.
+        with JOBS_LOCK:
+            JOBS[job_id]["finished_at"] = time.time()
+            if ACTIVE.get(appid) == job_id:
+                del ACTIVE[appid]
 
 
 def _begin_job(appid, refresh=False):
-    """Create a job record and start the background thread; return the job id."""
-    job_id = uuid.uuid4().hex
-    JOBS[job_id] = {"percent": 0, "message": "Starting...", "done": False, "error": None}
+    """
+    Start a background analysis and return its job id. If a job for this same
+    game is already running, attach to it instead of launching a duplicate run
+    (saves duplicate work and API spend when two people analyze the same game).
+    """
+    with JOBS_LOCK:
+        _prune_jobs()
+        existing = ACTIVE.get(appid)
+        if existing and not JOBS.get(existing, {}).get("done"):
+            return existing            # an analysis for this game is already underway
+        job_id = uuid.uuid4().hex
+        JOBS[job_id] = {"percent": 0, "message": "Starting...", "done": False,
+                        "error": None, "appid": appid}
+        ACTIVE[appid] = job_id
     threading.Thread(target=_run_job, args=(job_id, appid, refresh), daemon=True).start()
     return job_id
 
