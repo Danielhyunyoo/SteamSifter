@@ -22,7 +22,7 @@ from classify_batch import MAX_REVIEW_CHARS, MAX_WORKERS
 
 EMBED_MODEL = "text-embedding-3-small"
 EMBED_BATCH = 256
-LABEL_SAMPLE = 8
+LABEL_SAMPLE = 12
 MIN_THEME_SIZE = 3
 MAX_THEMES_PER_SIDE = 12
 REVIEWS_PER_THEME = 25
@@ -108,12 +108,23 @@ def _label_cluster(client, reviews, category):
     block = "\n".join(f"- {(r.get('text') or '').strip()[:MAX_REVIEW_CHARS]}" for r in sample)
 
     prompt = (
-        "These player reviews of one video game all describe the SAME specific "
-        f"theme (rough category: {category}).\n\n"
-        "Give a short, SPECIFIC name (3-6 words), a one-line description, and a "
-        "'kind': use feature if the theme is a specific, actionable aspect "
-        "(a system, mechanic, bug, or piece of content) or emotional if it is "
-        "general sentiment, mood, nostalgia, or a farewell.\n\n"
+        "Below are player reviews of one video game on Steam, grouped together "
+        f"because they share the same topic (rough category: {category}).\n\n"
+        "Name the single CONCRETE thing these reviews are actually about. Be "
+        "specific and honest about the real issue or the real thing players "
+        "praise: if they are about cheaters, say cheating; if about lag or FPS, "
+        "say performance; if about prices or skins, say monetization.\n\n"
+        "Name rules (3-6 words):\n"
+        "- Be concrete and specific. Good: 'Rampant cheaters in competitive', "
+        "'Frequent FPS drops after update', 'Toxic voice chat and griefing', "
+        "'Loved gunplay and movement feel'.\n"
+        "- Never use vague umbrella phrases. Bad: 'Mixed player experience', "
+        "'Overall sentiment', 'General gameplay feedback', 'Player interaction'.\n"
+        "- If one specific complaint or praise dominates the reviews, name THAT, "
+        "even if a few reviews differ.\n\n"
+        "Also give a one-line description and a 'kind': use feature for a "
+        "specific, actionable aspect (a system, mechanic, bug, or content), or "
+        "emotional for general mood, nostalgia, or a farewell.\n\n"
         f"Reviews:\n{block}"
     )
     return generate_json(client, prompt, ClusterLabel)
