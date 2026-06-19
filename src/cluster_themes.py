@@ -26,6 +26,9 @@ LABEL_SAMPLE = 12
 MIN_THEME_SIZE = 3
 MAX_THEMES_PER_SIDE = 12
 REVIEWS_PER_THEME = 25
+MERGE_SIMILARITY = float(os.environ.get("MERGE_SIMILARITY", "0.85"))
+                                 # merge clusters whose centroids are at least
+                                 # this cosine-similar (collapses duplicate themes)
 
 
 class ClusterLabel(BaseModel):
@@ -130,6 +133,52 @@ def _label_cluster(client, reviews, category):
     return generate_json(client, prompt, ClusterLabel)
 
 
+def merge_similar_clusters(vectors, labels):
+    """
+    Collapse clusters whose centroids are nearly identical (cosine >= the
+    threshold), so a homogeneous game does not get the same idea split into many
+    near-duplicate themes. Distinct topics keep low centroid similarity and stay
+    separate. Returns a new labels list with merged clusters sharing one id.
+    """
+    import numpy as np
+
+    X = np.asarray(vectors, dtype="float32")
+    norms = np.linalg.norm(X, axis=1, keepdims=True)
+    norms[norms == 0] = 1.0
+    X = X / norms
+
+    uniq = sorted(set(labels))
+    if len(uniq) < 2:
+        return list(labels)
+
+    # Normalized centroid per cluster.
+    centroid = {}
+    for lab in uniq:
+        idx = [i for i, l in enumerate(labels) if l == lab]
+        c = X[idx].mean(axis=0)
+        nc = np.linalg.norm(c)
+        centroid[lab] = c / nc if nc else c
+
+    # Union-find: merge any pair of clusters above the similarity threshold.
+    parent = {lab: lab for lab in uniq}
+
+    def find(a):
+        while parent[a] != a:
+            parent[a] = parent[parent[a]]
+            a = parent[a]
+        return a
+
+    for i in range(len(uniq)):
+        for j in range(i + 1, len(uniq)):
+            a, b = uniq[i], uniq[j]
+            if float(np.dot(centroid[a], centroid[b])) >= MERGE_SIMILARITY:
+                ra, rb = find(a), find(b)
+                if ra != rb:
+                    parent[max(ra, rb)] = min(ra, rb)   # keep the lower id as rep
+
+    return [find(l) for l in labels]
+
+
 def theme_group_embed(client, reviews):
     """Theme one polarity group by embedding + k-means + per-cluster labeling."""
     from themes import ThemeDef, aggregate_themes, UNCLEAR_LABEL
@@ -139,6 +188,7 @@ def theme_group_embed(client, reviews):
 
     vectors = embed_texts([r.get("text", "") for r in reviews])
     labels = cluster_vectors(vectors)
+    labels = merge_similar_clusters(vectors, labels)   # collapse duplicate themes
 
     clusters = {}
     for idx, lab in enumerate(labels):
