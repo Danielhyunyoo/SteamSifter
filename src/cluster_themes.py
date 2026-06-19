@@ -38,6 +38,14 @@ class ClusterLabel(BaseModel):
     kind: Literal["feature", "emotional"]
 
 
+class _MergeGroup(BaseModel):
+    """A set of theme indices that describe the same thing, with a merged label."""
+    members: list[int]
+    name: str
+    description: str
+    kind: Literal["feature", "emotional"]
+
+
 def _openai_client():
     """A direct OpenAI client (embeddings live outside the llm.py wrapper)."""
     from openai import OpenAI
@@ -179,6 +187,64 @@ def merge_similar_clusters(vectors, labels):
     return [find(l) for l in labels]
 
 
+def _dedupe_themes(client, labeled):
+    """
+    Merge themes that describe the SAME underlying issue worded differently.
+
+    One LLM call reads every theme's name + description and returns groups of
+    duplicates to fold together. This catches semantic duplicates that the
+    embedding-centroid merge misses (e.g. "Lack of anti-cheat" vs "Rampant
+    cheating and ineffective anti-cheat"). Robust to omissions: any theme the
+    model does not place in a group is kept on its own.
+
+    labeled / return: list of (members, name, description, kind, category).
+    """
+    from llm import generate_json
+
+    if len(labeled) < 2:
+        return labeled
+
+    block = "\n".join(f"{i}. {name} \u2014 {desc}"
+                      for i, (members, name, desc, kind, cat) in enumerate(labeled))
+    prompt = (
+        "Below is a numbered list of themes extracted from one video game's "
+        "reviews. Some describe the SAME underlying issue or praise using "
+        "different wording; others are genuinely distinct.\n\n"
+        "Group together only the ones that are true duplicates of each other. "
+        "Return a list of groups covering EVERY theme exactly once: each group "
+        "gives the member indices and one best name, a one-line description, and "
+        "a kind ('feature' or 'emotional') for the merged theme. A theme with no "
+        "duplicate is its own group of one. Do NOT merge themes that are merely "
+        "related but about different things.\n\n"
+        f"Themes:\n{block}"
+    )
+    try:
+        groups = generate_json(client, prompt, list[_MergeGroup]) or []
+    except Exception as err:
+        print(f"  Theme dedupe failed ({err}); keeping themes as-is.")
+        return labeled
+
+    n = len(labeled)
+    assigned = set()
+    merged = []
+    for g in groups:
+        idxs = [i for i in g.members if 0 <= i < n and i not in assigned]
+        if not idxs:
+            continue
+        assigned.update(idxs)
+        members = []
+        for i in idxs:
+            members.extend(labeled[i][0])
+        name = (g.name or "").strip() or labeled[idxs[0]][1]
+        merged.append((members, name, g.description, g.kind, _majority_category(members)))
+
+    # Any theme the model didn't mention stays on its own.
+    for i in range(n):
+        if i not in assigned:
+            merged.append(labeled[i])
+    return merged
+
+
 def theme_group_embed(client, reviews):
     """Theme one polarity group by embedding + k-means + per-cluster labeling."""
     from themes import ThemeDef, aggregate_themes, UNCLEAR_LABEL
@@ -213,6 +279,9 @@ def theme_group_embed(client, reviews):
 
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
         labeled = list(pool.map(label, real.items()))
+
+    # One LLM pass to merge themes that are the same idea worded differently.
+    labeled = _dedupe_themes(client, labeled)
 
     theme_defs = []
     used_names = set()
