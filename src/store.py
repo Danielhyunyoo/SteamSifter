@@ -11,7 +11,9 @@ on the local (ephemeral) filesystem since they are just intermediates.
 
 import json
 import os
+import threading
 import time
+import uuid
 
 DATA_DIR = "data"
 
@@ -106,3 +108,140 @@ def save_analysis(app_id, analysis, max_age_days):
     os.makedirs(DATA_DIR, exist_ok=True)
     with open(os.path.join(DATA_DIR, f"analysis_{app_id}.json"), "w", encoding="utf-8") as f:
         f.write(payload)
+
+
+# ----------------------------------------------------------------------------
+# Background-job store: shared across gunicorn workers via Redis, with an
+# in-memory fallback for single-process dev. Holds progress for the live bar and
+# an appid -> job de-duplication claim so two people analyzing the same game
+# share one run.
+# ----------------------------------------------------------------------------
+
+JOB_TTL = 900   # seconds a job record lives (Redis TTL auto-cleans finished jobs)
+
+# Jobs use Redis only with multiple workers; a single worker keeps them in-process
+# to avoid unnecessary Redis traffic on the free tier.
+JOBS_USE_REDIS = int(os.environ.get("WEB_CONCURRENCY", "1")) > 1
+
+
+def _job_redis():
+    """The Redis client for jobs, or None when single-worker (use in-memory)."""
+    return _redis_client() if JOBS_USE_REDIS else None
+
+_mem_jobs = {}
+_mem_active = {}
+_mem_lock = threading.Lock()
+
+
+def _mem_prune():
+    """Drop finished in-memory jobs older than JOB_TTL (call under _mem_lock)."""
+    now = time.time()
+    stale = [jid for jid, j in _mem_jobs.items()
+             if j.get("done") and (now - j.get("finished_at", now)) > JOB_TTL]
+    for jid in stale:
+        _mem_jobs.pop(jid, None)
+
+
+def job_begin(appid):
+    """
+    Begin or attach to an analysis job for a game. Returns (job_id, is_new).
+
+    De-duplicates: if a job for this appid is already in flight, returns its id
+    with is_new=False so the caller does NOT start a second run. Atomic across
+    workers via Redis SET NX; falls back to a per-process lock without Redis.
+    """
+    new_id = uuid.uuid4().hex
+    r = _job_redis()
+    if r is not None:
+        try:
+            claimed = r.set(f"active:{appid}", new_id, nx=True, ex=JOB_TTL)
+            if not claimed:
+                existing = r.get(f"active:{appid}")
+                if existing:
+                    return existing, False
+                r.set(f"active:{appid}", new_id, ex=JOB_TTL)   # claim vanished; take it
+            r.hset(f"job:{new_id}", mapping={"percent": 0, "message": "Starting...",
+                                             "done": 0, "error": "", "appid": appid})
+            r.expire(f"job:{new_id}", JOB_TTL)
+            return new_id, True
+        except Exception as err:
+            print(f"Redis job_begin failed ({err}); using in-memory jobs.")
+    with _mem_lock:
+        _mem_prune()
+        existing = _mem_active.get(appid)
+        if existing and not _mem_jobs.get(existing, {}).get("done"):
+            return existing, False
+        _mem_jobs[new_id] = {"percent": 0, "message": "Starting...", "done": False,
+                             "error": None, "appid": appid}
+        _mem_active[appid] = new_id
+        return new_id, True
+
+
+def job_update(job_id, percent=None, message=None):
+    """Record a running job's progress (best-effort)."""
+    r = _job_redis()
+    if r is not None:
+        try:
+            fields = {}
+            if percent is not None:
+                fields["percent"] = int(percent)
+            if message is not None:
+                fields["message"] = message
+            if fields:
+                r.hset(f"job:{job_id}", mapping=fields)
+                r.expire(f"job:{job_id}", JOB_TTL)
+            return
+        except Exception:
+            pass
+    with _mem_lock:
+        j = _mem_jobs.get(job_id)
+        if j:
+            if percent is not None:
+                j["percent"] = percent
+            if message is not None:
+                j["message"] = message
+
+
+def job_finish(appid, job_id, error=None):
+    """Mark a job done and release the appid so a fresh run can start later."""
+    r = _job_redis()
+    if r is not None:
+        try:
+            fields = {"done": 1, "error": error or ""}
+            if not error:
+                fields["percent"] = 100
+                fields["message"] = "Done"
+            r.hset(f"job:{job_id}", mapping=fields)
+            r.expire(f"job:{job_id}", JOB_TTL)
+            if r.get(f"active:{appid}") == job_id:
+                r.delete(f"active:{appid}")
+            return
+        except Exception:
+            pass
+    with _mem_lock:
+        j = _mem_jobs.get(job_id)
+        if j:
+            j.update(done=True, error=error, finished_at=time.time())
+            if not error:
+                j.update(percent=100, message="Done")
+        if _mem_active.get(appid) == job_id:
+            _mem_active.pop(appid, None)
+
+
+def job_get(job_id):
+    """Return a job's state dict (percent/message/done/error), or None if unknown."""
+    r = _job_redis()
+    if r is not None:
+        try:
+            h = r.hgetall(f"job:{job_id}")
+            if h:
+                return {"percent": int(h.get("percent", 0)),
+                        "message": h.get("message", ""),
+                        "done": h.get("done") == "1",
+                        "error": h.get("error") or None}
+            return None
+        except Exception:
+            pass
+    with _mem_lock:
+        j = _mem_jobs.get(job_id)
+        return dict(j) if j else None

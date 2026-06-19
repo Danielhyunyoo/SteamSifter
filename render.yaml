@@ -6,8 +6,10 @@ services:
     runtime: python
     plan: free
     buildCommand: pip install -r requirements.txt
-    # One worker + threads because progress state is in-memory (single process).
-    startCommand: gunicorn --pythonpath src --bind 0.0.0.0:$PORT --workers 1 --threads 8 --timeout 120 app:app
+    # Worker count is env-driven (WEB_CONCURRENCY, default 1). Job state and rate
+    # limits are shared via Redis, so more than one worker is safe; bump
+    # WEB_CONCURRENCY once you outgrow the free tier's memory.
+    startCommand: gunicorn --pythonpath src --bind 0.0.0.0:$PORT --workers ${WEB_CONCURRENCY:-1} --threads 8 --timeout 120 app:app
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.5

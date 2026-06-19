@@ -61,10 +61,18 @@ REFRESH_GROWTH = 0.20
 # sees real client IPs rather than the proxy's.
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
-# Per-visitor rate limits to protect the shared API key. In-memory storage is
-# fine for the single-worker deploy; a multi-worker setup would need a shared
-# store (parked with the concurrency work).
-limiter = Limiter(get_remote_address, app=app)
+# Per-visitor rate limits to protect the shared API key. Use Redis storage when
+# available so limits are shared across gunicorn workers; in_memory_fallback keeps
+# the app working if Redis is briefly unreachable.
+_multi_worker = int(os.environ.get("WEB_CONCURRENCY", "1")) > 1
+_limiter_uri = (os.environ.get("REDIS_URL") if _multi_worker else None) or "memory://"
+try:
+    limiter = Limiter(get_remote_address, app=app, storage_uri=_limiter_uri,
+                      in_memory_fallback_enabled=True)
+except Exception as _err:
+    # If the Redis storage backend can't initialize, never crash at startup.
+    print(f"Rate-limit storage '{_limiter_uri}' unavailable ({_err}); using in-memory.")
+    limiter = Limiter(get_remote_address, app=app, storage_uri="memory://")
 
 
 def is_admin() -> bool:
@@ -328,58 +336,30 @@ def analyze():
 # Background analysis jobs (so the page can show a real progress bar)
 # ----------------------------------------------------------------------------
 
-# In-memory job registry. Fine for single-process dev; a multi-worker deploy
-# would move this to a shared store (V6 multi-worker item).
-JOBS = {}
-ACTIVE = {}                 # appid -> in-flight job id, for de-duplication
-JOBS_LOCK = threading.Lock()
-JOB_TTL = 600               # seconds to keep a finished job before pruning it
-
-
-def _prune_jobs():
-    """Drop finished jobs older than JOB_TTL. Call while holding JOBS_LOCK."""
-    now = time.time()
-    stale = [jid for jid, j in JOBS.items()
-             if j.get("done") and (now - j.get("finished_at", now)) > JOB_TTL]
-    for jid in stale:
-        JOBS.pop(jid, None)
+# Job state lives in the shared store (Redis across workers, else in-memory), so
+# progress polling and same-game de-duplication work no matter which gunicorn
+# worker handles each request.
 
 
 def _run_job(job_id, appid, refresh=False):
-    """Run the analysis in a background thread, recording progress in JOBS."""
-    def progress(pct, msg):
-        JOBS[job_id]["percent"] = pct
-        JOBS[job_id]["message"] = msg
+    """Run the analysis in a background thread, recording progress in the store."""
     try:
-        get_analysis(appid, refresh=refresh, progress=progress)  # writes the cache
-        JOBS[job_id].update(percent=100, message="Done", done=True)
+        get_analysis(appid, refresh=refresh,
+                     progress=lambda pct, msg: store.job_update(job_id, pct, msg))
+        store.job_finish(appid, job_id)
     except Exception as e:
-        JOBS[job_id].update(error=str(e), done=True)
-    finally:
-        # Mark completion time (for pruning) and release the app id so future
-        # requests can start a fresh job once this one is finished.
-        with JOBS_LOCK:
-            JOBS[job_id]["finished_at"] = time.time()
-            if ACTIVE.get(appid) == job_id:
-                del ACTIVE[appid]
+        store.job_finish(appid, job_id, error=str(e))
 
 
 def _begin_job(appid, refresh=False):
     """
-    Start a background analysis and return its job id. If a job for this same
-    game is already running, attach to it instead of launching a duplicate run
-    (saves duplicate work and API spend when two people analyze the same game).
+    Start a background analysis and return its job id. If a job for this same game
+    is already running (anywhere across workers), attach to it instead of starting
+    a duplicate run.
     """
-    with JOBS_LOCK:
-        _prune_jobs()
-        existing = ACTIVE.get(appid)
-        if existing and not JOBS.get(existing, {}).get("done"):
-            return existing            # an analysis for this game is already underway
-        job_id = uuid.uuid4().hex
-        JOBS[job_id] = {"percent": 0, "message": "Starting...", "done": False,
-                        "error": None, "appid": appid}
-        ACTIVE[appid] = job_id
-    threading.Thread(target=_run_job, args=(job_id, appid, refresh), daemon=True).start()
+    job_id, is_new = store.job_begin(appid)
+    if is_new:
+        threading.Thread(target=_run_job, args=(job_id, appid, refresh), daemon=True).start()
     return job_id
 
 
@@ -571,7 +551,7 @@ def refresh():
 def progress_route():
     """Return the current progress for a job id."""
     job = request.args.get("job", "")
-    return jsonify(JOBS.get(job, {"error": "unknown job", "done": True}))
+    return jsonify(store.job_get(job) or {"error": "unknown job", "done": True})
 
 
 ABOUT_PAGE = """<!DOCTYPE html>
