@@ -426,6 +426,7 @@ CHARTS_JS = """
   try { data = JSON.parse(el.textContent); } catch (e) { return; }
 
   var narrow = window.innerWidth < 640;   // stack legends/titles on small screens
+  var donutChart = null, trendChart = null;
   Chart.defaults.color = '#8f98a0';
   Chart.defaults.font.family = '-apple-system, Segoe UI, Roboto, sans-serif';
 
@@ -475,7 +476,7 @@ CHARTS_JS = """
   // Category donut.
   var d = data.donut, dc = document.getElementById('catDonut');
   if (dc && d && d.values.length) {
-    new Chart(dc, {
+    donutChart = new Chart(dc, {
       type: 'doughnut',
       data: { labels: d.labels,
               datasets: [{ data: d.values, backgroundColor: d.colors,
@@ -512,7 +513,7 @@ CHARTS_JS = """
         backgroundColor: 'rgba(102,192,244,0.16)', borderColor: '#66c0f4', borderWidth: 0,
         yAxisID: 'yVol', order: 5 });
     }
-    new Chart(tc, {
+    trendChart = new Chart(tc, {
       type: 'line',
       data: { labels: t.labels, datasets: datasets },
       options: {
@@ -534,6 +535,33 @@ CHARTS_JS = """
       plugins: [trendCrosshair]
     });
   }
+
+  // Charts are drawn in the dark theme; swap them to light for print, restore after.
+  function setChartTheme(forPrint) {
+    var gridC = forPrint ? '#d0d7de' : '#233040';
+    var textC = forPrint ? '#555f6a' : '#8f98a0';
+    if (donutChart) {
+      donutChart.data.datasets[0].borderColor = forPrint ? '#ffffff' : '#16202d';
+      if (donutChart.options.plugins.legend) donutChart.options.plugins.legend.labels.color = textC;
+      donutChart.update('none');
+    }
+    if (trendChart) {
+      var sc = trendChart.options.scales;
+      ['x', 'y', 'yVol'].forEach(function (k) {
+        if (!sc[k]) return;
+        if (sc[k].grid) sc[k].grid.color = gridC;
+        if (sc[k].ticks) sc[k].ticks.color = textC;
+        if (sc[k].title) sc[k].title.color = textC;
+      });
+      if (trendChart.data.datasets[2]) {
+        trendChart.data.datasets[2].borderColor = forPrint ? '#8a929c' : '#abb2bf';
+      }
+      if (trendChart.options.plugins.legend) trendChart.options.plugins.legend.labels.color = textC;
+      trendChart.update('none');
+    }
+  }
+  window.addEventListener('beforeprint', function () { setChartTheme(true); });
+  window.addEventListener('afterprint', function () { setChartTheme(false); });
 })();
 </script>
 """
