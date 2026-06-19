@@ -744,13 +744,26 @@ def build_html(analysis: dict, title: str, refresh_state: dict = None) -> str:
   }}
   @media print {{
     @page {{ margin: 1.2cm; }}
-    body {{ -webkit-print-color-adjust: exact; print-color-adjust: exact; }}
-    header {{ padding: 12px 0; border: 0; }}
-    main {{ max-width: 100%; padding: 8px 0; }}
+    /* Light theme for paper/PDF: dark text on white, keep the color accents. */
+    body {{ -webkit-print-color-adjust: exact; print-color-adjust: exact; background: #ffffff !important; color: #1d2733 !important; }}
+    header {{ background: #ffffff !important; padding: 0 0 10px !important; border-bottom: 1px solid #d0d7de !important; }}
+    header a.brand {{ color: #1a6dc4 !important; }}
+    header h1 {{ color: #111111 !important; }}
+    main {{ max-width: 100%; padding: 10px 0; }}
+    h2 {{ color: #111111 !important; break-after: avoid; }}
     .navsearch, .refresh, .printbtn, .donut-hint, .trend-tip, .toggle-bar {{ display: none !important; }}
     #side-fix, #side-love {{ display: block !important; }}
-    .card, .example, .stat {{ break-inside: avoid; }}
-    h2 {{ break-after: avoid; }}
+    .overview, .card, .trend-wrap, .stat {{ background: #ffffff !important; border: 1px solid #d0d7de !important; box-shadow: none !important; break-inside: avoid; }}
+    .example {{ break-inside: avoid; border-left-color: #d0d7de !important; }}
+    .meta, .count, .legend, .legend-item, .ov-note, .ov-sub, .trend-sub, .impact-help, .aname, .translation, .cat-label, .cat-num, .cat-count, .stat-label {{ color: #555f6a !important; }}
+    .theme-name, .stat-value {{ color: #111111 !important; }}
+    .description, .quote, .quote-link {{ color: #2b333c !important; }}
+    .ov-title, .source {{ color: #1a6dc4 !important; }}
+    .badge {{ background: #eef1f4 !important; color: #333333 !important; }}
+    .thumb.up {{ background: #e6f4ea !important; color: #1a7f37 !important; }}
+    .thumb.down {{ background: #fbe9ea !important; color: #b3261e !important; }}
+    .unclear {{ background: #f6f8fa !important; border-color: #d0d7de !important; color: #444444 !important; }}
+    .bar-track, .cat-track, .sentiment-bar {{ background: #e8edf2 !important; }}
   }}
 </style>
 </head>
