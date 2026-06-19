@@ -39,6 +39,16 @@ app = Flask(__name__)
 # admin login survives restarts; fall back to a random per-process key in dev.
 app.secret_key = os.environ.get("SECRET_KEY") or os.urandom(24).hex()
 
+# Harden the admin session cookie: HTTPS-only, no JavaScript access, and
+# SameSite to blunt CSRF. SESSION_COOKIE_SECURE is relaxed for local http dev
+# in the __main__ block below. The password itself is never sent to the client;
+# only this signed cookie is, so it cannot be read or forged.
+app.config.update(
+    SESSION_COOKIE_SECURE=os.environ.get("SESSION_COOKIE_SECURE", "1") != "0",
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+)
+
 # Owner-only password. When unset, the admin bypass is simply disabled.
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
 
@@ -732,5 +742,8 @@ def admin_logout():
 
 
 if __name__ == "__main__":
+    # Local dev runs over plain http, so a Secure cookie would never be set and
+    # admin login would silently fail; relax it only here.
+    app.config["SESSION_COOKIE_SECURE"] = False
     # threaded=True lets the progress endpoint respond while a job runs.
     app.run(debug=True, threaded=True, port=5000)
