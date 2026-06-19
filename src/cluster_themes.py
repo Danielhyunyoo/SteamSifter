@@ -26,7 +26,7 @@ LABEL_SAMPLE = 12
 MIN_THEME_SIZE = 3
 MAX_THEMES_PER_SIDE = 12
 REVIEWS_PER_THEME = 25
-MERGE_SIMILARITY = float(os.environ.get("MERGE_SIMILARITY", "0.85"))
+MERGE_SIMILARITY = float(os.environ.get("MERGE_SIMILARITY", "0.80"))
                                  # merge clusters whose centroids are at least
                                  # this cosine-similar (collapses duplicate themes)
 
