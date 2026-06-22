@@ -39,6 +39,13 @@ app = Flask(__name__)
 # admin login survives restarts; fall back to a random per-process key in dev.
 app.secret_key = os.environ.get("SECRET_KEY") or os.urandom(24).hex()
 
+# Without a stable SECRET_KEY the admin session cookie is signed with a random
+# per-process key, so admin logins reset on every restart and break across
+# multiple gunicorn workers. Warn loudly so it is caught before going public.
+if not os.environ.get("SECRET_KEY"):
+    print("WARNING: SECRET_KEY is not set. Admin sessions will reset on restart "
+          "and will not work across workers. Set SECRET_KEY in production.")
+
 # Harden the admin session cookie: HTTPS-only, no JavaScript access, and
 # SameSite to blunt CSRF. SESSION_COOKIE_SECURE is relaxed for local http dev
 # in the __main__ block below. The password itself is never sent to the client;
@@ -73,6 +80,38 @@ except Exception as _err:
     # If the Redis storage backend can't initialize, never crash at startup.
     print(f"Rate-limit storage '{_limiter_uri}' unavailable ({_err}); using in-memory.")
     limiter = Limiter(get_remote_address, app=app, storage_uri="memory://")
+
+
+def valid_appid(appid: str) -> bool:
+    """
+    True only for a plain Steam app id (a positive integer, sane length).
+
+    app_id is interpolated into cache file names (reviews_<id>_all.json,
+    analysis_<id>.json) and into upstream Steam URLs, so validating it at the
+    edge closes off path traversal and pointless upstream calls in one place.
+    """
+    return bool(appid) and appid.isdigit() and len(appid) <= 12
+
+
+# Defense-in-depth response headers on every response: block MIME sniffing, deny
+# framing (clickjacking), trim referrer leakage, and apply a pragmatic CSP. The
+# inline scripts/styles still require 'unsafe-inline', but locking object-src,
+# base-uri, and frame-ancestors and constraining the other sources still helps.
+@app.after_request
+def set_security_headers(resp):
+    resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+    resp.headers.setdefault("X-Frame-Options", "DENY")
+    resp.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    resp.headers.setdefault(
+        "Content-Security-Policy",
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data: https:; "
+        "connect-src 'self'; "
+        "object-src 'none'; base-uri 'self'; frame-ancestors 'none'",
+    )
+    return resp
 
 
 def is_admin() -> bool:
@@ -225,6 +264,7 @@ def home():
 
 
 @app.route("/api/search")
+@limiter.limit("120 per minute")   # generous for live typing, caps scripted abuse
 def api_search():
     """Return JSON game suggestions for the search box."""
     return jsonify(search_games(request.args.get("q", "")))
@@ -305,9 +345,9 @@ EMPTY_PAGE = """<!DOCTYPE html>
 @limiter.limit("40 per hour")
 def analyze():
     """Run the cached pipeline for a game and serve its report."""
-    appid = request.args.get("appid")
-    if not appid:
-        return "Missing appid", 400
+    appid = request.args.get("appid", "")
+    if not valid_appid(appid):
+        return "Invalid appid", 400
 
     title = request.args.get("title") or f"App {appid}"
 
@@ -348,7 +388,10 @@ def _run_job(job_id, appid, refresh=False):
                      progress=lambda pct, msg: store.job_update(job_id, pct, msg))
         store.job_finish(appid, job_id)
     except Exception as e:
-        store.job_finish(appid, job_id, error=str(e))
+        # Log the real error server-side, but hand users a generic message so
+        # internal details (paths, tracebacks) never leak out via /progress.
+        print(f"Analysis job {job_id} for app {appid} failed: {e}")
+        store.job_finish(appid, job_id, error="Analysis failed. Please try again.")
 
 
 def _begin_job(appid, refresh=False):
@@ -523,9 +566,9 @@ def analyzing():
 @limiter.limit("10 per hour; 3 per minute")
 def start():
     """Kick off a background analysis job (cache-friendly); returns a job id."""
-    appid = request.args.get("appid")
-    if not appid:
-        return jsonify({"error": "missing appid"}), 400
+    appid = request.args.get("appid", "")
+    if not valid_appid(appid):
+        return jsonify({"error": "invalid appid"}), 400
     return jsonify({"job": _begin_job(appid, refresh=False)})
 
 
@@ -537,9 +580,9 @@ def refresh():
     cannot spam it: the report must be older than the cooldown (admins exempt),
     and the route is rate limited on top of that.
     """
-    appid = request.args.get("appid")
-    if not appid:
-        return jsonify({"error": "missing appid"}), 400
+    appid = request.args.get("appid", "")
+    if not valid_appid(appid):
+        return jsonify({"error": "invalid appid"}), 400
     allowed, needed = refresh_status(appid)
     if not allowed:
         return jsonify({"error": f"Not enough new reviews yet. About {needed:,} more "
@@ -699,6 +742,7 @@ def _admin_page(message, signed_in=False):
 
 
 @app.route("/admin", methods=["GET", "POST"])
+@limiter.limit("5 per minute; 30 per hour", methods=["POST"], exempt_when=is_admin)
 def admin():
     """Owner login. A correct password sets a signed admin session cookie."""
     if request.method == "POST":
