@@ -122,6 +122,189 @@ document.addEventListener('DOMContentLoaded', function () {
 """
 
 
+FILTER_BAR_HTML = """
+<div class="filterbar" id="filterbar">
+  <span class="filterbar-label">Filter reviews</span>
+  <label>Recommendation
+    <select id="f-rec">
+      <option value="all">All</option>
+      <option value="yes">Recommended</option>
+      <option value="no">Not recommended</option>
+    </select>
+  </label>
+  <label>Min playtime
+    <select id="f-pt">
+      <option value="0">Any</option>
+      <option value="10">10h+</option>
+      <option value="100">100h+</option>
+      <option value="500">500h+</option>
+    </select>
+  </label>
+  <label>Language
+    <select id="f-lang">
+      <option value="all">All</option>
+      <option value="en">English only</option>
+    </select>
+  </label>
+  <span class="filtered-count" id="filteredCount"></span>
+</div>
+"""
+
+
+FILTER_JS = """
+<script>
+(function () {
+  var dataEl = document.getElementById('reviewdata');
+  var bar = document.getElementById('filterbar');
+  if (!dataEl || !bar) return;
+  var D; try { D = JSON.parse(dataEl.textContent); } catch (e) { return; }
+  var reviews = D.reviews, catColors = D.cats, tl = D.tl;
+  var SC = { positive: '#98c379', negative: '#e06c75', neutral: '#abb2bf' };
+
+  function weight(r) { return 1 + Math.log10(1 + r.pt) + Math.log10(1 + r.hv); }
+  function byImp(a, b) { return b.impact - a.impact; }
+  function filters() {
+    return {
+      rec: document.getElementById('f-rec').value,
+      pt: parseFloat(document.getElementById('f-pt').value) || 0,
+      lang: document.getElementById('f-lang').value,
+    };
+  }
+  function match(r, f) {
+    if (f.rec === 'yes' && r.vu !== 1) return false;
+    if (f.rec === 'no' && r.vu !== 0) return false;
+    if (r.pt < f.pt) return false;
+    if (f.lang === 'en' && r.en !== 1) return false;
+    return true;
+  }
+  function setStat(k, v) { var e = document.querySelector('[data-stat=\"' + k + '\"]'); if (e) e.textContent = v; }
+
+  function recompute() {
+    var f = filters();
+    var fr = reviews.filter(function (r) { return match(r, f); });
+
+    var st = { positive: 0, negative: 0, neutral: 0 };
+    fr.forEach(function (r) { if (st[r.se] !== undefined) st[r.se]++; });
+    var tot = st.positive + st.negative + st.neutral;
+
+    var cats = {}, themes = {};
+    fr.forEach(function (r) {
+      if (r.co === 1 && r.th) {
+        cats[r.ca] = (cats[r.ca] || 0) + 1;
+        var k = r.sd + '|' + r.th;
+        var t = themes[k] || (themes[k] = { count: 0, impact: 0, side: r.sd, name: r.th });
+        t.count++; t.impact += weight(r);
+      }
+    });
+    var noise = fr.filter(function (r) { return r.co === 0; }).length;
+
+    // Scoreboard
+    setStat('reviews', fr.length);
+    setStat('positive', (tot ? Math.round(st.positive / tot * 100) : 0) + '%');
+    setStat('negative', (tot ? Math.round(st.negative / tot * 100) : 0) + '%');
+    var neg = [], pos = [];
+    Object.keys(themes).forEach(function (k) { (themes[k].side === 'pos' ? pos : neg).push(themes[k]); });
+    setStat('themes', neg.length + pos.length);
+    neg.sort(byImp); pos.sort(byImp);
+    setStat('topfix', neg.length ? neg[0].name : '\u2014');
+    setStat('toppraise', pos.length ? pos[0].name : '\u2014');
+
+    // Sentiment bar + legend
+    var sb = document.getElementById('sentimentBar'), sl = document.getElementById('sentimentLegend');
+    if (sb) { var h = ''; ['positive','negative','neutral'].forEach(function (k) {
+      var v = st[k], p = tot ? v / tot * 100 : 0;
+      if (v) h += '<div class=\"seg\" style=\"width:' + p.toFixed(1) + '%;background:' + SC[k] + '\"></div>'; }); sb.innerHTML = h; }
+    if (sl) { var lh = ''; ['positive','negative','neutral'].forEach(function (k) {
+      var v = st[k], p = tot ? Math.round(v / tot * 100) : 0;
+      lh += '<span class=\"legend-item\"><span class=\"dot\" style=\"background:' + SC[k] + '\"></span>' + k + ' ' + p + '% <span class=\"cat-count\">(' + v + ')</span></span>'; }); sl.innerHTML = lh; }
+
+    // Donut
+    var dc = window.__charts && window.__charts.donut;
+    if (dc) {
+      var ce = Object.keys(cats).map(function (c) { return [c, cats[c]]; }).sort(function (a, b) { return b[1] - a[1]; });
+      dc.data.labels = ce.map(function (e) { return e[0]; });
+      dc.data.datasets[0].data = ce.map(function (e) { return e[1]; });
+      dc.data.datasets[0].backgroundColor = ce.map(function (e) { return catColors[e[0]] || '#7f848e'; });
+      dc.update('none');
+    }
+
+    // Trend (re-bucket over the original date buckets)
+    var tc = window.__charts && window.__charts.trend;
+    if (tc && tl && tl.keys.length) {
+      var idx = {}; tl.keys.forEach(function (k, i) { idx[k] = i; });
+      var P = tl.keys.map(function () { return 0; }), N = P.slice(), U = P.slice(), V = P.slice();
+      fr.forEach(function (r) {
+        if (!r.dt) return;
+        var key = tl.gran === 'month' ? r.dt.slice(0, 7) : r.dt;
+        var i = idx[key]; if (i === undefined) return;
+        if (r.se === 'positive') P[i]++; else if (r.se === 'negative') N[i]++; else U[i]++;
+        V[i]++;
+      });
+      var ds = tc.data.datasets;
+      if (ds[0]) ds[0].data = P; if (ds[1]) ds[1].data = N; if (ds[2]) ds[2].data = U; if (ds[3]) ds[3].data = V;
+      tc.update('none');
+    }
+
+    // Theme cards: update + reorder by impact, hide empties.
+    ['side-fix', 'side-love'].forEach(function (sideId) {
+      var side = sideId === 'side-fix' ? 'neg' : 'pos';
+      var cont = document.getElementById(sideId);
+      if (!cont) return;
+      var cards = Array.prototype.slice.call(cont.querySelectorAll('.card'));
+      var maxI = 0;
+      cards.forEach(function (c) { var t = themes[side + '|' + c.getAttribute('data-theme')]; if (t && t.impact > maxI) maxI = t.impact; });
+      maxI = maxI || 1;
+      var ranked = [];
+      cards.forEach(function (c) {
+        var t = themes[side + '|' + c.getAttribute('data-theme')];
+        if (!t || t.count === 0) { c.style.display = 'none'; return; }
+        c.style.display = '';
+        var w = Math.round(t.impact / maxI * 100);
+        var cn = c.querySelector('.count'); if (cn) cn.textContent = t.count + ' reviews';
+        var bf = c.querySelector('.bar-fill'); if (bf) { bf.style.width = w + '%'; bf.setAttribute('data-w', w); }
+        var ch = c.querySelector('.impact-chip');
+        if (ch) { var lv = w >= 66 ? 'high' : (w >= 33 ? 'med' : 'low');
+          ch.className = 'impact-chip impact-' + lv;
+          ch.textContent = (lv === 'high' ? 'High' : lv === 'med' ? 'Med' : 'Low') + ' impact'; }
+        ranked.push({ c: c, imp: t.impact });
+      });
+      ranked.sort(function (a, b) { return b.imp - a.imp; });
+      ranked.forEach(function (o, i) { cont.appendChild(o.c); var rk = o.c.querySelector('.rank'); if (rk) rk.textContent = '#' + (i + 1); });
+      var uncl = cont.querySelector('.unclear'); if (uncl) cont.appendChild(uncl);
+    });
+
+    // Noise note + filtered count
+    var nn = document.getElementById('noiseNote');
+    if (nn) nn.innerHTML = 'Filtered as low-signal noise: <strong>' + noise + '</strong> reviews.';
+    var fc = document.getElementById('filteredCount');
+    if (fc) fc.textContent = fr.length + ' of ' + reviews.length + ' reviews';
+
+    // Example quotes: show those matching the filter, cap 2 per theme.
+    document.querySelectorAll('.example').forEach(function (ex) {
+      var vu = ex.getAttribute('data-vu'), pt = parseFloat(ex.getAttribute('data-pt')) || 0, en = ex.getAttribute('data-en');
+      var ok = true;
+      if (f.rec === 'yes' && vu !== '1') ok = false;
+      if (f.rec === 'no' && vu !== '0') ok = false;
+      if (pt < f.pt) ok = false;
+      if (f.lang === 'en' && en !== '1') ok = false;
+      ex.style.display = ok ? '' : 'none';
+    });
+    document.querySelectorAll('.examples').forEach(function (box) {
+      var shown = 0;
+      Array.prototype.slice.call(box.querySelectorAll('.example')).forEach(function (ex) {
+        if (ex.style.display !== 'none') { shown++; if (shown > 2) ex.style.display = 'none'; }
+      });
+    });
+  }
+
+  ['f-rec', 'f-pt', 'f-lang'].forEach(function (id) {
+    var e = document.getElementById(id); if (e) e.addEventListener('change', recompute);
+  });
+})();
+</script>
+"""
+
+
 def esc(text) -> str:
     """Escape text so review content can't break the HTML."""
     return html.escape(str(text))
@@ -194,7 +377,8 @@ def render_example(example: dict) -> str:
         author_html = ''
 
     return (
-        '<div class="example">'
+        f'<div class="example" data-vu="{1 if voted is True else 0}" '
+        f'data-pt="{hours:g}" data-hv="{helpful}" data-en="{example.get("en", 1)}">'
         f'{author_html}'
         f'{quote_html}'
         f'{trans_html}'
@@ -233,7 +417,7 @@ def render_theme_card(rank: int, theme: dict, max_impact: float) -> str:
                     "top theme on this side.")
     examples_html = "".join(render_example(e) for e in theme.get("examples", []))
     return (
-        '<div class="card">'
+        f'<div class="card" data-theme="{name}">'
         '<div class="card-head">'
         f'<span class="rank">#{rank}</span>'
         f'<span class="theme-name">{name}</span>'
@@ -306,14 +490,14 @@ def render_overview(sentiment_totals: dict, total_reviews: int, noise_count: int
     filtered_line = ""
     if noise_count:
         npct = round(noise_count / total_reviews * 100) if total_reviews else 0
-        filtered_line = (f'<div class="ov-note">Filtered as low-signal noise: '
+        filtered_line = (f'<div class="ov-note" id="noiseNote">Filtered as low-signal noise: '
                          f'<strong>{noise_count}</strong> reviews ({npct}% of all).</div>')
 
     return (
         '<div class="overview">'
         '<div class="ov-title">Sentiment</div>'
-        f'<div class="sentiment-bar">{segments}</div>'
-        f'<div class="legend">{legend}</div>'
+        f'<div class="sentiment-bar" id="sentimentBar">{segments}</div>'
+        f'<div class="legend" id="sentimentLegend">{legend}</div>'
         '<div class="ov-title">By category <span class="ov-sub">share of categorized reviews</span></div>'
         '<div class="donut-wrap"><canvas id="catDonut"></canvas></div>'
         '<div class="donut-hint">Tip: click a category in the legend to show or hide it.</div>'
@@ -378,19 +562,19 @@ def render_scoreboard(analysis: dict) -> str:
     top_fix = esc(negs[0]["theme"]) if negs else "&mdash;"
     top_praise = esc(poss[0]["theme"]) if poss else "&mdash;"
 
-    def card(icon, label, value, cls=""):
+    def card(icon, label, value, key, cls=""):
         return (f'<div class="stat">{icon}<div class="stat-body">'
                 f'<div class="stat-label">{label}</div>'
-                f'<div class="stat-value {cls}">{value}</div></div></div>')
+                f'<div class="stat-value {cls}" data-stat="{key}">{value}</div></div></div>')
 
     return (
         '<div class="scoreboard">'
-        + card(ICON_REVIEWS, "Reviews analyzed", total_reviews)
-        + card(ICON_UP, "Positive", f"{pct_pos}%", "good")
-        + card(ICON_DOWN, "Negative", f"{pct_neg}%", "bad")
-        + card(ICON_THEMES, "Themes found", themes_count)
-        + card(ICON_FIX, "Top fix", top_fix, "small bad")
-        + card(ICON_PRAISE, "Top praise", top_praise, "small good")
+        + card(ICON_REVIEWS, "Reviews analyzed", total_reviews, "reviews")
+        + card(ICON_UP, "Positive", f"{pct_pos}%", "positive", "good")
+        + card(ICON_DOWN, "Negative", f"{pct_neg}%", "negative", "bad")
+        + card(ICON_THEMES, "Themes found", themes_count, "themes")
+        + card(ICON_FIX, "Top fix", top_fix, "topfix", "small bad")
+        + card(ICON_PRAISE, "Top praise", top_praise, "toppraise", "small good")
         + '</div>'
     )
 
@@ -562,6 +746,7 @@ CHARTS_JS = """
   }
   window.addEventListener('beforeprint', function () { setChartTheme(true); });
   window.addEventListener('afterprint', function () { setChartTheme(false); });
+  window.__charts = { donut: donutChart, trend: trendChart };
 })();
 </script>
 """
@@ -646,6 +831,22 @@ def build_html(analysis: dict, title: str, refresh_state: dict = None) -> str:
     toggle_js = TOGGLE_JS
     charts_js = CHARTS_JS
     chartjs_cdn = CHARTJS_CDN
+
+    # Live review filters: ship the compact per-review array so the dashboard can
+    # recompute under filters in the browser. Old cached reports lack it, so the
+    # filter bar is simply omitted (no breakage, no re-analysis needed).
+    filter_reviews = analysis.get("reviews")
+    if filter_reviews:
+        tl_payload = {"gran": timeline.get("granularity", "day"),
+                      "keys": [p.get("label", "") for p in pts],
+                      "labels": trend_labels(timeline)}
+        fdata_json = json.dumps({"reviews": filter_reviews, "cats": dict(CATEGORY_COLORS),
+                                 "tl": tl_payload}, ensure_ascii=False).replace("</", "<\\/")
+        filter_data_script = f'<script id="reviewdata" type="application/json">{fdata_json}</script>'
+        filter_bar = FILTER_BAR_HTML
+        filter_js_block = FILTER_JS
+    else:
+        filter_data_script = filter_bar = filter_js_block = ""
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -751,6 +952,12 @@ def build_html(analysis: dict, title: str, refresh_state: dict = None) -> str:
   .trend-tip .tt-title {{ font-weight: 700; color: #fff; margin-bottom: 4px; }}
   .trend-tip .tt-row {{ display: flex; align-items: center; gap: 6px; line-height: 1.4; }}
   .trend-tip .tt-dot {{ width: 9px; height: 9px; border-radius: 2px; flex: none; }}
+  .filterbar {{ display: flex; flex-wrap: wrap; align-items: center; gap: 12px; background: rgba(22,32,45,0.72); border: 1px solid #2a3a4d; border-radius: 6px; padding: 10px 14px; margin: 0 0 14px; font-size: 12px; }}
+  .filterbar-label {{ color: #66c0f4; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; }}
+  .filterbar label {{ color: #8f98a0; display: inline-flex; align-items: center; gap: 6px; }}
+  .filterbar select {{ background: #0e1620; color: #c7d5e0; border: 1px solid #2a3a4d; border-radius: 4px; padding: 4px 6px; font-size: 12px; }}
+  .filtered-count {{ margin-left: auto; color: #8f98a0; }}
+  .examples .example:nth-child(n+3) {{ display: none; }}
   @media (max-width: 640px) {{
     header {{ padding: 16px 18px; }}
     .titlerow {{ flex-direction: column; align-items: stretch; gap: 12px; }}
@@ -779,7 +986,7 @@ def build_html(analysis: dict, title: str, refresh_state: dict = None) -> str:
     header h1 {{ color: #111111 !important; }}
     main {{ max-width: 100%; padding: 10px 0; }}
     h2 {{ color: #111111 !important; break-after: avoid; }}
-    .navsearch, .refresh, .printbtn, .donut-hint, .trend-tip, .toggle-bar {{ display: none !important; }}
+    .navsearch, .refresh, .printbtn, .donut-hint, .trend-tip, .toggle-bar, .filterbar {{ display: none !important; }}
     #side-fix, #side-love {{ display: block !important; }}
     .overview, .card, .trend-wrap, .stat {{ background: #ffffff !important; border: 1px solid #d0d7de !important; box-shadow: none !important; break-inside: avoid; }}
     .example {{ break-inside: avoid; border-left-color: #d0d7de !important; }}
@@ -799,6 +1006,7 @@ def build_html(analysis: dict, title: str, refresh_state: dict = None) -> str:
   {header_html}
   <main>
     {scoreboard_html}
+    {filter_bar}
     <h2>Overview</h2>
     {overview_html}
     {trend_section}
@@ -814,10 +1022,12 @@ def build_html(analysis: dict, title: str, refresh_state: dict = None) -> str:
     {noise_html}
   </main>
   {chartdata_script}
+  {filter_data_script}
   {nav_search}
   {toggle_js}
   {chartjs_cdn}
   {charts_js}
+  {filter_js_block}
 </body>
 </html>"""
 

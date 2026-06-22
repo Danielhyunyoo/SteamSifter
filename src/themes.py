@@ -40,7 +40,7 @@ from classify_batch import BATCH_SIZE, DELAY_BETWEEN_BATCHES, MAX_REVIEW_CHARS, 
 
 SAMPLE_FOR_DISCOVERY = 120     # how many reviews to show the discovery pass
 TARGET_THEME_COUNT = "8 to 12" # how many themes we ask the model to produce
-EXAMPLES_PER_THEME = 2         # representative quotes to keep per theme
+EXAMPLES_PER_THEME = 4         # representative quotes to keep per theme (filterable)
 UNCLEAR_LABEL = "unclear"      # fallback when a review fits no discovered theme
 
 # Theming method:
@@ -269,6 +269,15 @@ def build_sentiment_timeline(classified: list) -> dict:
     return {"granularity": "month" if by_month else "day", "points": points}
 
 
+def _is_english(text) -> int:
+    """1 if the text is mostly Latin letters, else 0 (Cyrillic/CJK/etc. -> 0)."""
+    letters = [c for c in (text or "") if c.isalpha()]
+    if len(letters) < 3:
+        return 1
+    non_ascii = sum(1 for c in letters if ord(c) > 127)
+    return 0 if non_ascii / len(letters) > 0.3 else 1
+
+
 def aggregate_themes(reviews: list, themes: list) -> list:
     """
     Build the final theme records: count, impact score, and example quotes.
@@ -303,6 +312,7 @@ def aggregate_themes(reviews: list, themes: list) -> list:
                 "playtime_at_review_hours": r.get("playtime_at_review_hours", 0),
                 "steamid": r.get("steamid"),
                 "voted_up": r.get("voted_up"),
+                "en": _is_english(r.get("text", "")),
             }
             for r in items_sorted[:EXAMPLES_PER_THEME]
         ]
@@ -440,10 +450,33 @@ def analyze_both(client, classified: list, on_progress=None) -> dict:
                 "playtime_at_review_hours": r.get("playtime_at_review_hours", 0),
                 "steamid": r.get("steamid"),
                 "voted_up": r.get("voted_up"),
+                "en": _is_english(r.get("text", "")),
             }
             for r in noise_sorted[:EXAMPLES_PER_THEME]
         ],
     }
+
+    # Compact per-review array so the report can recompute the dashboard live
+    # under filters (playtime / recommend / language) without re-analyzing.
+    reviews_compact = []
+    for r in classified:
+        co = 1 if r.get("is_constructive", True) else 0
+        theme = r.get("theme", "") if co else ""
+        if theme in (UNCLEAR_LABEL, "noise", None):
+            theme = ""
+        side = ("pos" if r.get("sentiment") == "positive" else "neg") if co else ""
+        reviews_compact.append({
+            "co": co,                                  # constructive (1) vs noise (0)
+            "sd": side,                                # 'neg' / 'pos' / ''
+            "th": theme or "",                         # theme name ('' = unclear/noise)
+            "ca": r.get("category", "other"),
+            "se": r.get("sentiment", "neutral"),
+            "pt": round(r.get("playtime_at_review_hours", 0) or 0, 1),
+            "hv": r.get("helpful_votes", 0) or 0,
+            "vu": 1 if r.get("voted_up") else 0,
+            "en": _is_english(r.get("text", "")),
+            "dt": r.get("created_date") or "",
+        })
 
     return {
         "negative": negative_records,
@@ -452,6 +485,7 @@ def analyze_both(client, classified: list, on_progress=None) -> dict:
         "sentiment_totals": _count_sentiments(classified),
         "sentiment_timeline": build_sentiment_timeline(classified),
         "total_reviews": len(classified),
+        "reviews": reviews_compact,
     }
 
 
