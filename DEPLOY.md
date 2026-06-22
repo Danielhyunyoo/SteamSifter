@@ -11,7 +11,10 @@ SteamSifter runs as a persistent Flask process, so use a "web service" host
 4. When prompted, set the secret `OPENAI_API_KEY` to your OpenAI key.
    (`LLM_PROVIDER=openai` is already set in the blueprint.)
 5. Create the service and wait for the build. You get a public URL like
-   `https://steamsifter.onrender.com`.
+   `https://steamsifter.onrender.com`. The live site runs on a custom domain,
+   `https://steamsifter.com`, pointed at this service via Cloudflare DNS
+   (CNAME records for the root and `www`, DNS-only); the `onrender.com`
+   subdomain is disabled once the custom domain verifies.
 
 ## Notes
 - Free tier spins down when idle, so the first visit after a while is slow

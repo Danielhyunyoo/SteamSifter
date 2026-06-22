@@ -2,7 +2,7 @@
 
 **AI-powered review intelligence for game studios.** Turn Steam reviews into a ranked, themed list of what to fix and what your players love.
 
-> Status: live and being built incrementally. Try it: https://steamsifter.onrender.com
+> Status: live and being built incrementally. Try it: https://steamsifter.com
 
 ---
 
