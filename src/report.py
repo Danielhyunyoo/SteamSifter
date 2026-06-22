@@ -807,17 +807,30 @@ def build_html(analysis: dict, title: str, refresh_state: dict = None) -> str:
 
     refresh_html = render_refresh(refresh_state)
 
+    # Game banner straight from Steam's CDN, built from the app id (available via
+    # refresh_state on the web app). onerror hides it for titles with no header
+    # image, so a missing banner never leaves a broken-image icon.
+    appid = (refresh_state or {}).get("appid", "")
+    thumb_html = (
+        f'<img class="gamethumb" alt="" '
+        f'src="https://cdn.cloudflare.steamstatic.com/steam/apps/{esc(appid)}/header.jpg" '
+        'onerror="this.style.display=\'none\'">'
+    ) if appid else ''
+
     # Header markup (plain strings, brace-safe).
     header_html = (
         '<header>'
         '<a class="brand" href="/">SteamSifter</a>'
         '<div class="titlerow">'
+        '<div class="titlelead">'
+        f'{thumb_html}'
         '<div class="titleblock">'
         f'<h1>{esc(title)}</h1>'
         f'<div class="meta">Review analysis &middot; {total_reviews} reviews &middot; '
         f'Generated {generated}</div>'
         f'{refresh_html}'
         '<button class="printbtn" onclick="window.print()" title="Print or save this report as a PDF">Print / Save PDF</button>'
+        '</div>'
         '</div>'
         '<div class="navsearch">'
         '<input id="navq" type="text" placeholder="Analyze another game..." autocomplete="off">'
@@ -862,6 +875,8 @@ def build_html(analysis: dict, title: str, refresh_state: dict = None) -> str:
   header a.brand {{ font-size: 14px; letter-spacing: 2px; color: #66c0f4; text-transform: uppercase; text-decoration: none; display: inline-block; margin-bottom: 12px; }}
   header a.brand:hover {{ color: #8fd0fb; }}
   .titlerow {{ display: flex; align-items: center; justify-content: space-between; gap: 16px; }}
+  .titlelead {{ display: flex; align-items: center; gap: 16px; min-width: 0; }}
+  .gamethumb {{ width: 120px; height: auto; border-radius: 4px; border: 1px solid #2a3a4d; display: block; flex-shrink: 0; }}
   header h1 {{ margin: 0 0 4px; font-size: 26px; color: #fff; font-weight: 500; }}
   header .meta {{ color: #8f98a0; font-size: 14px; }}
   .navsearch {{ position: relative; flex: 1; max-width: 320px; }}
@@ -961,6 +976,7 @@ def build_html(analysis: dict, title: str, refresh_state: dict = None) -> str:
   @media (max-width: 640px) {{
     header {{ padding: 16px 18px; }}
     .titlerow {{ flex-direction: column; align-items: stretch; gap: 12px; }}
+    .gamethumb {{ width: 96px; }}
     header h1 {{ font-size: 22px; }}
     .navsearch {{ max-width: none; }}
     main {{ padding: 20px 14px 48px; }}

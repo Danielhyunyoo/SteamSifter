@@ -426,11 +426,14 @@ ANALYZING_PAGE = """<!DOCTYPE html>
   .pct { font-size: 36px; font-weight: 700; color: #fff; margin: 16px 0 4px; font-variant-numeric: tabular-nums; }
   .msg { color: #8f98a0; font-size: 14px; min-height: 20px; }
   .err { color: #e06c75; font-size: 14px; margin-top: 14px; }
+  .gamethumb { width: 240px; max-width: 100%; height: auto; border-radius: 6px;
+               border: 1px solid #2a475e; margin: 0 auto 18px; display: none; }
 </style>
 </head>
 <body>
   <div class="box">
     <div class="brand">SteamSifter</div>
+    <img id="thumb" class="gamethumb" alt="">
     <h1 id="title">Analyzing...</h1>
     <div class="track"><div id="fill" class="fill"></div></div>
     <div id="pct" class="pct">0 / 1000</div>
@@ -443,6 +446,14 @@ ANALYZING_PAGE = """<!DOCTYPE html>
   const title = params.get('title') || '';
   const force = params.get('force');   // set by the report's Re-analyze button
   if (title) document.getElementById('title').textContent = 'Analyzing ' + title;
+
+  // Show the game's Steam banner once it loads; stay hidden if the title has none.
+  var thumb = document.getElementById('thumb');
+  if (appid) {
+    thumb.onload = function () { thumb.style.display = 'block'; };
+    thumb.src = 'https://cdn.cloudflare.steamstatic.com/steam/apps/' +
+      encodeURIComponent(appid) + '/header.jpg';
+  }
 
   const fill = document.getElementById('fill');
   const pct = document.getElementById('pct');
@@ -769,5 +780,5 @@ if __name__ == "__main__":
     # Local dev runs over plain http, so a Secure cookie would never be set and
     # admin login would silently fail; relax it only here.
     app.config["SESSION_COOKIE_SECURE"] = False
-    # threaded=True lets the progress endpoint respond while a job runs.
+    # threaded=True lets the progress endpoint respond while a job runs locally.
     app.run(debug=True, threaded=True, port=5000)
