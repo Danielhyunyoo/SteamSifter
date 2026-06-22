@@ -23,7 +23,7 @@ from urllib.parse import quote
 CATEGORY_COLORS = {
     "bug": "#e06c75",
     "performance": "#d19a66",
-    "gameplay": "#61afef",
+    "gameplay": "#818cf8",   # indigo: distinct from the blue impact chips
     "cheating": "#c678dd",
     "community": "#56b6c2",
     "monetization": "#e5c07b",
