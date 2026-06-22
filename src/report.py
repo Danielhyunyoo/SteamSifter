@@ -752,6 +752,96 @@ CHARTS_JS = """
 """
 
 
+def steam_rating(pos, neg, total):
+    """
+    A Steam-style overall rating label from the positive/negative split, plus a
+    background and text color. Returns ("", "", "") when there is nothing to rate.
+    """
+    denom = pos + neg
+    if denom < 1:
+        return "", "", ""
+    ratio = pos / denom
+    big = total >= 200                       # only claim "Overwhelmingly" with volume
+    if ratio >= 0.95:
+        label = "Overwhelmingly Positive" if big else "Very Positive"
+    elif ratio >= 0.80:
+        label = "Very Positive"
+    elif ratio >= 0.70:
+        label = "Mostly Positive"
+    elif ratio >= 0.40:
+        label = "Mixed"
+    elif ratio >= 0.20:
+        label = "Mostly Negative"
+    else:
+        label = "Overwhelmingly Negative" if big else "Very Negative"
+    if ratio >= 0.70:
+        return label, "#66c0f4", "#0e1620"   # Steam blue, dark text
+    if ratio >= 0.40:
+        return label, "#b9a06a", "#211b0e"   # tan/gold for Mixed
+    return label, "#c15b5b", "#1f0e0e"       # muted red for Negative
+
+
+def relative_time(epoch):
+    """A human 'x ago' string from an epoch timestamp, or None when missing."""
+    import time
+    if not epoch:
+        return None
+    secs = max(0, time.time() - epoch)
+    if secs < 90:
+        return "just now"
+    for size, name in ((86400 * 365, "year"), (86400 * 30, "month"),
+                       (86400, "day"), (3600, "hour"), (60, "minute")):
+        if secs >= size:
+            n = int(secs // size)
+            return f"{n} {name}{'s' if n != 1 else ''} ago"
+    return "just now"
+
+
+# Quality-of-life client behaviors: count-up scoreboard numbers, a copy-link
+# button, and a "/" shortcut to focus the in-report search. Plain string (not an
+# f-string), injected as a value, so its braces and regex backslashes are safe.
+QOL_JS = """<script>
+(function () {
+  function countUp(el) {
+    var raw = el.textContent.trim();
+    var m = raw.match(/^(\\d[\\d,]*)(\\D*)$/);   // leading number + optional suffix
+    if (!m) return;
+    var target = parseInt(m[1].replace(/,/g, ''), 10);
+    var suffix = m[2] || '';
+    if (!isFinite(target)) return;
+    var dur = 700, start = null;
+    function step(ts) {
+      if (start === null) start = ts;
+      var p = Math.min(1, (ts - start) / dur);
+      var eased = 1 - Math.pow(1 - p, 3);
+      el.textContent = Math.round(target * eased).toLocaleString() + suffix;
+      if (p < 1) requestAnimationFrame(step);
+      else el.textContent = target.toLocaleString() + suffix;
+    }
+    requestAnimationFrame(step);
+  }
+  document.querySelectorAll('.stat-value[data-stat]').forEach(function (el) {
+    if (/^\\d/.test(el.textContent.trim())) countUp(el);
+  });
+
+  window.copyReportLink = function (btn) {
+    navigator.clipboard.writeText(window.location.href).then(function () {
+      var prev = btn.textContent;
+      btn.textContent = 'Copied!';
+      setTimeout(function () { btn.textContent = prev; }, 1500);
+    }).catch(function () {});
+  };
+
+  document.addEventListener('keydown', function (e) {
+    if (e.key === '/' && !/^(INPUT|TEXTAREA)$/.test((e.target.tagName || ''))) {
+      var q = document.getElementById('navq');
+      if (q) { e.preventDefault(); q.focus(); }
+    }
+  });
+})();
+</script>"""
+
+
 def build_html(analysis: dict, title: str, refresh_state: dict = None) -> str:
     """Assemble the full report from a combined analysis dict (see analyze_both)."""
     neg = analysis.get("negative", [])
@@ -760,6 +850,11 @@ def build_html(analysis: dict, title: str, refresh_state: dict = None) -> str:
     sentiment_totals = analysis.get("sentiment_totals", {})
     total_reviews = analysis.get("total_reviews", 0)
     generated = date.today().strftime("%B %d, %Y")
+    analyzed_rel = relative_time(analysis.get("cached_at")) or "just now"
+    rating_label, rating_bg, rating_fg = steam_rating(
+        sentiment_totals.get("positive", 0), sentiment_totals.get("negative", 0), total_reviews)
+    rating_badge = (f'<span class="rating-badge" style="background:{rating_bg};color:{rating_fg}">'
+                    f'{esc(rating_label)}</span>') if rating_label else ''
 
     overview_html = render_overview(sentiment_totals, total_reviews, noise.get("count", 0))
     scoreboard_html = render_scoreboard(analysis)
@@ -826,10 +921,12 @@ def build_html(analysis: dict, title: str, refresh_state: dict = None) -> str:
         f'{thumb_html}'
         '<div class="titleblock">'
         f'<h1>{esc(title)}</h1>'
-        f'<div class="meta">Review analysis &middot; {total_reviews} reviews &middot; '
-        f'Generated {generated}</div>'
+        f'{rating_badge}'
+        f'<div class="meta" title="Generated {generated}">Review analysis &middot; '
+        f'{total_reviews} reviews &middot; Analyzed {analyzed_rel}</div>'
         f'{refresh_html}'
         '<button class="printbtn" onclick="window.print()" title="Print or save this report as a PDF">Print / Save PDF</button>'
+        '<button class="printbtn copybtn" onclick="copyReportLink(this)" title="Copy a shareable link to this report">Copy link</button>'
         '</div>'
         '</div>'
         '<div class="navsearch">'
@@ -843,6 +940,7 @@ def build_html(analysis: dict, title: str, refresh_state: dict = None) -> str:
     nav_search = NAV_SEARCH_JS
     toggle_js = TOGGLE_JS
     charts_js = CHARTS_JS
+    qol_js = QOL_JS
     chartjs_cdn = CHARTJS_CDN
 
     # Live review filters: ship the compact per-review array so the dashboard can
@@ -877,6 +975,8 @@ def build_html(analysis: dict, title: str, refresh_state: dict = None) -> str:
   .titlerow {{ display: flex; align-items: center; justify-content: space-between; gap: 16px; }}
   .titlelead {{ display: flex; align-items: center; gap: 16px; min-width: 0; }}
   .gamethumb {{ width: 120px; height: auto; border-radius: 4px; border: 1px solid #2a3a4d; display: block; flex-shrink: 0; }}
+  .rating-badge {{ display: inline-block; padding: 3px 10px; border-radius: 4px; font-size: 12px; font-weight: 600; margin: 0 0 8px; }}
+  .copybtn {{ margin-left: 8px; }}
   header h1 {{ margin: 0 0 4px; font-size: 26px; color: #fff; font-weight: 500; }}
   header .meta {{ color: #8f98a0; font-size: 14px; }}
   .navsearch {{ position: relative; flex: 1; max-width: 320px; }}
@@ -1043,6 +1143,7 @@ def build_html(analysis: dict, title: str, refresh_state: dict = None) -> str:
   {toggle_js}
   {chartjs_cdn}
   {charts_js}
+  {qol_js}
   {filter_js_block}
 </body>
 </html>"""

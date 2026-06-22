@@ -249,6 +249,11 @@ HOME_PAGE = """<!DOCTYPE html>
     });
     results.style.display = 'block';
   }
+  document.addEventListener('keydown', (e) => {
+    if (e.key === '/' && !/^(INPUT|TEXTAREA)$/.test(e.target.tagName || '')) {
+      e.preventDefault(); input.focus();
+    }
+  });
   function analyze(appid, name) {
     window.location = '/analyzing?appid=' + appid + '&title=' + encodeURIComponent(name);
   }
@@ -425,9 +430,11 @@ ANALYZING_PAGE = """<!DOCTYPE html>
   .fill { height: 100%; width: 0%; background: linear-gradient(90deg,#1a9fff,#66c0f4); transition: width .15s linear; }
   .pct { font-size: 36px; font-weight: 700; color: #fff; margin: 16px 0 4px; font-variant-numeric: tabular-nums; }
   .msg { color: #8f98a0; font-size: 14px; min-height: 20px; }
+  .flavor { color: #66c0f4; font-size: 13px; min-height: 18px; margin-top: 12px;
+           opacity: 0; transition: opacity .45s ease; }
   .err { color: #e06c75; font-size: 14px; margin-top: 14px; }
   .gamethumb { width: 240px; max-width: 100%; height: auto; border-radius: 6px;
-               border: 1px solid #2a475e; margin: 0 auto 18px; display: none; }
+               border: 1px solid #2a475e; margin: 20px auto 18px; display: none; }
 </style>
 </head>
 <body>
@@ -438,6 +445,7 @@ ANALYZING_PAGE = """<!DOCTYPE html>
     <div class="track"><div id="fill" class="fill"></div></div>
     <div id="pct" class="pct">0 / 1000</div>
     <div id="msg" class="msg">Starting...</div>
+    <div id="flavor" class="flavor"></div>
     <div id="err" class="err"></div>
   </div>
 <script>
@@ -458,6 +466,31 @@ ANALYZING_PAGE = """<!DOCTYPE html>
   const fill = document.getElementById('fill');
   const pct = document.getElementById('pct');
   const msg = document.getElementById('msg');
+
+  // Rotating, fading flavor lines so the wait feels intentional (and a bit fun).
+  var flavorEl = document.getElementById('flavor');
+  var flavors = [
+    "Reading the rage reviews so you don't have to...",
+    "Weighing playtime against pure salt...",
+    "Sifting jokes from real bug reports...",
+    "Counting how many people typed 'unplayable'...",
+    "Asking the sweaty try-hards what they really think...",
+    "Doing the math on a thousand opinions...",
+    "Hang in there, it's almost done, TRUST...",
+    "Almost there, the AI is forming opinions..."
+  ];
+  var flavorIdx = 0;
+  function rotateFlavor() {
+    if (!flavorEl) return;
+    flavorEl.style.opacity = 0;
+    setTimeout(function () {
+      flavorEl.textContent = flavors[flavorIdx % flavors.length];
+      flavorIdx++;
+      flavorEl.style.opacity = 1;
+    }, 450);
+  }
+  rotateFlavor();
+  setInterval(rotateFlavor, 4200);
 
   var target = 0;     // latest server-reported percent (0-100)
   var shown = 0;      // smoothly animated value, so the counter never looks frozen
