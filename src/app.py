@@ -734,8 +734,10 @@ def og_image(appid):
     if not valid_appid(appid):
         return "Invalid appid", 404
     title = (request.args.get("t") or f"App {appid}")[:80]
+    ver = request.args.get("v", "")
     now = time.time()
-    cached = _og_cache.get((appid, title))
+    key = (appid, title, ver)
+    cached = _og_cache.get(key)
     if cached and now - cached[0] < _OG_TTL:
         png = cached[1]
     else:
@@ -746,7 +748,7 @@ def og_image(appid):
         except Exception as err:
             print(f"OG card render failed for {appid}: {err}")
             return "", 500
-        _og_cache[(appid, title)] = (now, png)
+        _og_cache[key] = (now, png)
         if len(_og_cache) > 200:                      # crude prune of oldest
             for k in sorted(_og_cache, key=lambda k: _og_cache[k][0])[:80]:
                 _og_cache.pop(k, None)
