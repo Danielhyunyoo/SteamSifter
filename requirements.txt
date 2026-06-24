@@ -12,3 +12,4 @@ flask-limiter>=3.5.0   # per-visitor rate limiting (protect the API key)
 redis>=5.0.0           # persistent cache store (Upstash) on deploy
 numpy>=1.26            # vectors for embedding clustering
 scikit-learn>=1.3      # k-means clustering of review embeddings
+pillow>=10.0           # social-share (OpenGraph) card image generation

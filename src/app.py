@@ -720,6 +720,40 @@ def about():
     return ABOUT_PAGE
 
 
+# Small per-worker cache of generated share cards, so repeat crawler hits and
+# refreshes do not re-render (and re-download the banner) every time.
+_og_cache = {}
+_OG_TTL = 3600
+
+
+@app.route("/og/<appid>.png")
+@limiter.limit("60 per minute")
+def og_image(appid):
+    """Render the 1200x630 social-share (OpenGraph) card for a game."""
+    if not valid_appid(appid):
+        return "Invalid appid", 404
+    title = (request.args.get("t") or f"App {appid}")[:80]
+    now = time.time()
+    cached = _og_cache.get((appid, title))
+    if cached and now - cached[0] < _OG_TTL:
+        png = cached[1]
+    else:
+        import og_card
+        analysis = store.load_analysis(appid, DEFAULT_MAX_AGE_DAYS)
+        try:
+            png = og_card.render(appid, title, analysis)
+        except Exception as err:
+            print(f"OG card render failed for {appid}: {err}")
+            return "", 500
+        _og_cache[(appid, title)] = (now, png)
+        if len(_og_cache) > 200:                      # crude prune of oldest
+            for k in sorted(_og_cache, key=lambda k: _og_cache[k][0])[:80]:
+                _og_cache.pop(k, None)
+    resp = Response(png, mimetype="image/png")
+    resp.headers["Cache-Control"] = "public, max-age=86400"
+    return resp
+
+
 # ----------------------------------------------------------------------------
 # Rate-limit response + owner (admin) login
 # ----------------------------------------------------------------------------

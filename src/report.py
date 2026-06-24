@@ -39,6 +39,9 @@ SENTIMENT_COLORS = {"positive": "#98c379", "negative": "#e06c75", "neutral": "#a
 UNCLEAR_LABEL = "unclear"   # constructive reviews that matched no theme
 NOISE_LABEL = "noise"       # reviews filtered out as low-signal
 
+# Absolute base URL for OpenGraph image/url tags (override per environment).
+SITE_URL = os.environ.get("SITE_URL", "https://steamsifter.com").rstrip("/")
+
 # Steam-style thumb icon (points up). The "down" variant reuses it rotated.
 THUMB_SVG = (
     '<svg viewBox="0 0 24 24" width="11" height="11" fill="currentColor" '
@@ -912,6 +915,39 @@ def build_html(analysis: dict, title: str, refresh_state: dict = None) -> str:
         'onerror="this.style.display=\'none\'">'
     ) if appid else ''
 
+    # OpenGraph / Twitter card so shared links unfurl into a rich preview. Only
+    # emitted on the web path (appid present); image is served by the /og route.
+    og_tags = ""
+    if appid:
+        top_fix_name = next((x["theme"] for x in neg
+                             if x["theme"] not in (NOISE_LABEL, UNCLEAR_LABEL)), "")
+        top_praise_name = next((x["theme"] for x in pos
+                               if x["theme"] not in (NOISE_LABEL, UNCLEAR_LABEL)), "")
+        bits = []
+        if top_praise_name:
+            bits.append(f"Top praise: {top_praise_name}")
+        if top_fix_name:
+            bits.append(f"Top fix: {top_fix_name}")
+        detail = " \u00b7 ".join(bits) or "AI review analysis"
+        og_desc = f"{total_reviews} reviews analyzed. {detail}."
+        og_title = f"{title} \u2014 SteamSifter review analysis"
+        og_img = f"{SITE_URL}/og/{appid}.png?t={quote(title)}"
+        og_url = f"{SITE_URL}/analyze?appid={appid}&title={quote(title)}"
+        og_tags = (
+            '<meta property="og:type" content="website">'
+            '<meta property="og:site_name" content="SteamSifter">'
+            f'<meta property="og:title" content="{esc(og_title)}">'
+            f'<meta property="og:description" content="{esc(og_desc)}">'
+            f'<meta property="og:image" content="{esc(og_img)}">'
+            '<meta property="og:image:width" content="1200">'
+            '<meta property="og:image:height" content="630">'
+            f'<meta property="og:url" content="{esc(og_url)}">'
+            '<meta name="twitter:card" content="summary_large_image">'
+            f'<meta name="twitter:title" content="{esc(og_title)}">'
+            f'<meta name="twitter:description" content="{esc(og_desc)}">'
+            f'<meta name="twitter:image" content="{esc(og_img)}">'
+        )
+
     # Header markup (plain strings, brace-safe).
     header_html = (
         '<header>'
@@ -966,6 +1002,7 @@ def build_html(analysis: dict, title: str, refresh_state: dict = None) -> str:
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2366c0f4' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><circle cx='11' cy='11' r='7'/><line x1='21' y1='21' x2='16.65' y2='16.65'/></svg>">
 <title>SteamSifter Report: {esc(title)}</title>
+{og_tags}
 <style>
   * {{ box-sizing: border-box; }}
   body {{ font-family: "Motiva Sans", -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; background: #1b2838; color: #c7d5e0; }}
