@@ -75,8 +75,12 @@ NAV_SEARCH_JS = """
       games.forEach(function (g) {
         const row = document.createElement('div');
         row.className = 'navresult';
-        row.innerHTML = (g.image ? '<img src="' + g.image + '">' : '<img>') +
-                        '<span>' + g.name + '</span>';
+        const img = document.createElement('img');
+        if (g.image) img.src = g.image;
+        const span = document.createElement('span');
+        span.textContent = g.name;
+        row.appendChild(img);
+        row.appendChild(span);
         row.onclick = function () {
           window.location = '/analyzing?appid=' + g.appid +
             '&title=' + encodeURIComponent(g.name);

@@ -244,7 +244,12 @@ HOME_PAGE = """<!DOCTYPE html>
     games.forEach(g => {
       const row = document.createElement('div');
       row.className = 'result';
-      row.innerHTML = (g.image ? '<img src="' + g.image + '">' : '<img>') + '<span>' + g.name + '</span>';
+      const img = document.createElement('img');
+      if (g.image) img.src = g.image;
+      const span = document.createElement('span');
+      span.textContent = g.name;
+      row.appendChild(img);
+      row.appendChild(span);
       row.onclick = () => analyze(g.appid, g.name);
       results.appendChild(row);
     });
@@ -336,7 +341,12 @@ EMPTY_PAGE = """<!DOCTYPE html>
     games.forEach(g => {
       const row = document.createElement('div');
       row.className = 'result';
-      row.innerHTML = (g.image ? '<img src="' + g.image + '">' : '<img>') + '<span>' + g.name + '</span>';
+      const img = document.createElement('img');
+      if (g.image) img.src = g.image;
+      const span = document.createElement('span');
+      span.textContent = g.name;
+      row.appendChild(img);
+      row.appendChild(span);
       row.onclick = () => { window.location = '/analyzing?appid=' + g.appid + '&title=' + encodeURIComponent(g.name); };
       results.appendChild(row);
     });
