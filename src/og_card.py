@@ -105,13 +105,13 @@ def render(appid, title, analysis=None, banner=None):
         bg = _cover(banner, W, H).filter(ImageFilter.GaussianBlur(28))
         bg = ImageEnhance.Brightness(bg).enhance(0.55)
         base.paste(bg, (0, 0))
-    base = Image.composite(Image.new("RGB", (W, H), DARK), base, _vgrad(120, 205))
+    base = Image.composite(Image.new("RGB", (W, H), DARK), base, _vgrad(110, 200))
 
     draw = ImageDraw.Draw(base)
     f_brand = _font("DejaVuSans-Bold.ttf", 26)
-    f_title = _font("DejaVuSans-Bold.ttf", 46)
-    f_label = _font("DejaVuSans-Bold.ttf", 23)
-    f_value = _font("DejaVuSans.ttf", 27)
+    f_title = _font("DejaVuSans-Bold.ttf", 52)
+    f_label = _font("DejaVuSans-Bold.ttf", 25)
+    f_value = _font("DejaVuSans.ttf", 29)
     f_pill = _font("DejaVuSans-Bold.ttf", 23)
     f_sub = _font("DejaVuSans.ttf", 26)
 
@@ -134,46 +134,48 @@ def render(appid, title, analysis=None, banner=None):
         draw.rounded_rectangle((px, py, px + pill_w, py + pill_h), radius=8, fill=rbg)
         draw.text((px + pill_w / 2, py + pill_h / 2), label, font=f_pill, fill=rfg, anchor="mm")
 
-    # Bottom block: sharp banner thumbnail + title + insights.
-    by1 = H - PAD
-    text_x = PAD
+    # Everything below is a single left-aligned column at the left margin.
+    x = PAD
+    full_w = W - 2 * PAD
+
+    # Sharp banner above the title.
+    y = 130
     if banner is not None:
-        thumb_w = 300
-        thumb_h = int(thumb_w * banner.size[1] / banner.size[0])
-        thumb = banner.resize((thumb_w, thumb_h), Image.LANCZOS)
-        ty0 = by1 - thumb_h
-        base.paste(thumb, (PAD, ty0))
-        draw.rectangle((PAD - 1, ty0 - 1, PAD + thumb_w, ty0 + thumb_h),
-                       outline=(210, 216, 224), width=1)
-        text_x = PAD + thumb_w + 30
-        block_top = ty0
-        block_h = thumb_h
+        bw = 330
+        bh = int(bw * banner.size[1] / banner.size[0])
+        thumb = banner.resize((bw, bh), Image.LANCZOS)
+        base.paste(thumb, (x, y))
+        draw.rectangle((x - 1, y - 1, x + bw, y + bh), outline=(210, 216, 224), width=1)
+        y += bh + 24
     else:
-        block_top = by1 - 150
-        block_h = 150
+        y = 170
 
-    max_w = W - PAD - text_x
-    title_cy = block_top + 26
-    draw.text((text_x, title_cy), _truncate(draw, title, f_title, max_w),
-              font=f_title, fill=WHITE, anchor="lm")
+    # Title.
+    draw.text((x, y), _truncate(draw, title, f_title, full_w), font=f_title, fill=WHITE, anchor="lt")
+    y += 58
 
-    praise = _top_theme(analysis.get("positive")) if analysis else ""
-    fix = _top_theme(analysis.get("negative")) if analysis else ""
-    label_col = 224
-    iy = title_cy + 62
-    if analysis is not None and (praise or fix):
-        if praise:
-            draw.text((text_x, iy), "▲ Top praise", font=f_label, fill=GREEN, anchor="lm")
-            draw.text((text_x + label_col, iy), _truncate(draw, praise, f_value, max_w - label_col),
-                      font=f_value, fill=WHITE, anchor="lm")
-            iy += 46
-        if fix:
-            draw.text((text_x, iy), "▼ Top fix", font=f_label, fill=RED, anchor="lm")
-            draw.text((text_x + label_col, iy), _truncate(draw, fix, f_value, max_w - label_col),
-                      font=f_value, fill=WHITE, anchor="lm")
+    if analysis is not None:
+        total = analysis.get("total_reviews", 0)
+        draw.text((x, y), f"{total:,} reviews analyzed", font=f_sub, fill=SUBTLE, anchor="lt")
+        y += 46
+
+        praise = _top_theme(analysis.get("positive"))
+        fix = _top_theme(analysis.get("negative"))
+        if praise or fix:
+            draw.line((x, y, x + full_w, y), fill=(110, 120, 134), width=1)
+            y += 30
+            label_col = 210
+            if praise:
+                draw.text((x, y), "▲ Top praise", font=f_label, fill=GREEN, anchor="lm")
+                draw.text((x + label_col, y), _truncate(draw, praise, f_value, full_w - label_col),
+                          font=f_value, fill=WHITE, anchor="lm")
+                y += 50
+            if fix:
+                draw.text((x, y), "▼ Top fix", font=f_label, fill=RED, anchor="lm")
+                draw.text((x + label_col, y), _truncate(draw, fix, f_value, full_w - label_col),
+                          font=f_value, fill=WHITE, anchor="lm")
     else:
-        draw.text((text_x, iy), "Review intelligence for game studios",
-                  font=f_sub, fill=SUBTLE, anchor="lm")
+        draw.text((x, y), "Review intelligence for game studios", font=f_sub, fill=SUBTLE, anchor="lt")
 
     out = io.BytesIO()
     base.save(out, format="PNG")
