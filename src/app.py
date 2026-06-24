@@ -16,9 +16,12 @@ Then open http://127.0.0.1:5000 in your browser.
 import html
 import math
 import os
+import re
+import smtplib
 import threading
 import time
 import uuid
+from email.message import EmailMessage
 from hmac import compare_digest
 
 from flask import Flask, request, jsonify, Response, session, redirect
@@ -58,6 +61,14 @@ app.config.update(
 
 # Owner-only password. When unset, the admin bypass is simply disabled.
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
+
+# Contact form delivery via Gmail SMTP. GMAIL_APP_PASSWORD is a Google app
+# password (needs 2FA on the account). Tickets land in CONTACT_TO (defaults to
+# the Gmail account). When unset, the form responds that it is unconfigured.
+GMAIL_USER = os.environ.get("GMAIL_USER", "")
+GMAIL_APP_PASSWORD = os.environ.get("GMAIL_APP_PASSWORD", "")
+CONTACT_TO = os.environ.get("CONTACT_TO", GMAIL_USER)
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 # A normal visitor can only force a re-analysis once the game has gained this
 # fraction of new reviews since the cached run (0.20 = 20% more). The owner
@@ -188,6 +199,22 @@ HOME_PAGE = """<!DOCTYPE html>
   .footer-links a:hover { color: #66c0f4; }
   .footer-links svg { width: 20px; height: 20px; fill: currentColor; display: block; }
   .disclaimer { margin: 12px auto 0; color: #5a6675; font-size: 11px; line-height: 1.5; max-width: 640px; }
+  html { scroll-behavior: smooth; }
+  .hero { min-height: 100vh; }
+  .contact { background: #16202d; border-top: 1px solid #0e1620; padding: 56px 24px; scroll-margin-top: 20px; }
+  .contact-inner { max-width: 560px; margin: 0 auto; text-align: center; }
+  .contact h2 { color: #fff; font-size: 24px; margin: 0 0 6px; }
+  .contact-sub { color: #8f98a0; font-size: 14px; margin: 0 0 22px; }
+  .contact-form { display: flex; flex-direction: column; gap: 12px; text-align: left; }
+  .contact-form input, .contact-form textarea { width: 100%; padding: 12px 14px; font-size: 15px; border-radius: 8px; border: 1px solid #2a475e; background: #1b2838; color: #fff; font-family: inherit; }
+  .contact-form textarea { resize: vertical; }
+  .contact-form button { padding: 12px 16px; font-size: 15px; font-weight: 600; border: none; border-radius: 8px; background: #66c0f4; color: #0e1620; cursor: pointer; }
+  .contact-form button:hover { background: #8fd0fb; }
+  .contact-form button:disabled { opacity: 0.6; cursor: default; }
+  .contact-status { font-size: 14px; min-height: 18px; margin-top: 2px; }
+  .contact-status.ok { color: #98c379; }
+  .contact-status.err { color: #e06c75; }
+  .hp { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
   @media (max-width: 640px) {
     h1 { font-size: 27px; }
     .hero { padding: 20px 16px; }
@@ -211,9 +238,25 @@ HOME_PAGE = """<!DOCTYPE html>
     </div>
   </div>
 
+  <section class="contact" id="contact">
+    <div class="contact-inner">
+      <h2>Contact &amp; feedback</h2>
+      <p class="contact-sub">Found a bug, have feedback, or want a game re-analyzed? Drop me a note and I'll get back to you by email.</p>
+      <form id="contactForm" class="contact-form">
+        <input type="text" name="name" placeholder="Your name" maxlength="100" required>
+        <input type="email" name="email" placeholder="Your email" maxlength="200" required>
+        <textarea name="message" placeholder="Your message" rows="5" maxlength="5000" required></textarea>
+        <input type="text" name="website" class="hp" tabindex="-1" autocomplete="off" aria-hidden="true">
+        <button type="submit" id="contactBtn">Send message</button>
+        <div id="contactMsg" class="contact-status" aria-live="polite"></div>
+      </form>
+    </div>
+  </section>
+
   <footer class="site-footer">
     <div class="footer-links">
       <a href="/about">About SteamSifter</a>
+      <a href="#contact">Contact</a>
       <a href="https://github.com/Danielhyunyoo/SteamSifter" target="_blank" rel="noopener" title="GitHub" aria-label="GitHub"><svg viewBox="0 0 24 24"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg></a>
       <a href="https://steamcommunity.com/profiles/76561198990353371/" target="_blank" rel="noopener" title="Steam" aria-label="Steam"><svg viewBox="0 0 24 24"><path d="M11.979 0C5.678 0 .511 4.86.022 11.037l6.432 2.658c.545-.371 1.203-.589 1.912-.589.063 0 .125.004.188.006l2.861-4.142V8.91c0-2.495 2.028-4.524 4.524-4.524s4.524 2.029 4.524 4.524c0 2.494-2.028 4.524-4.524 4.524h-.105l-4.076 2.911c0 .052.004.105.004.158 0 1.875-1.515 3.396-3.39 3.396-1.635 0-3.016-1.173-3.331-2.727L.436 15.27C1.862 20.307 6.486 24 11.979 24c6.627 0 11.999-5.373 11.999-12S18.605 0 11.979 0zM7.54 18.21l-1.473-.61c.262.543.714.999 1.314 1.25 1.297.539 2.793-.076 3.332-1.375.263-.63.264-1.319.005-1.949s-.75-1.121-1.377-1.383c-.624-.26-1.29-.249-1.878-.03l1.523.63c.956.4 1.409 1.5 1.009 2.455-.397.957-1.497 1.41-2.454 1.012H7.54zm11.415-9.303c0-1.662-1.353-3.015-3.015-3.015-1.665 0-3.015 1.353-3.015 3.015 0 1.665 1.35 3.015 3.015 3.015 1.663 0 3.015-1.35 3.015-3.015zm-5.273-.005c0-1.252 1.013-2.266 2.265-2.266 1.249 0 2.266 1.014 2.266 2.266 0 1.251-1.017 2.265-2.266 2.265-1.253 0-2.265-1.014-2.265-2.265z"/></svg></a>
       <a href="https://www.linkedin.com/in/danielhyunwooyoo/" target="_blank" rel="noopener" title="LinkedIn" aria-label="LinkedIn"><svg viewBox="0 0 24 24"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg></a>
@@ -262,6 +305,34 @@ HOME_PAGE = """<!DOCTYPE html>
   });
   function analyze(appid, name) {
     window.location = '/analyzing?appid=' + appid + '&title=' + encodeURIComponent(name);
+  }
+
+  const cf = document.getElementById('contactForm');
+  if (cf) {
+    cf.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('contactBtn');
+      const status = document.getElementById('contactMsg');
+      btn.disabled = true;
+      status.className = 'contact-status';
+      status.textContent = 'Sending...';
+      try {
+        const resp = await fetch('/contact', { method: 'POST', body: new FormData(cf) });
+        const data = await resp.json();
+        if (resp.ok && data.ok) {
+          status.textContent = 'Thanks! Your message was sent.';
+          status.className = 'contact-status ok';
+          cf.reset();
+        } else {
+          status.textContent = (data && data.error) || 'Something went wrong. Please try again.';
+          status.className = 'contact-status err';
+        }
+      } catch (err) {
+        status.textContent = 'Could not send right now. Please try again later.';
+        status.className = 'contact-status err';
+      }
+      btn.disabled = false;
+    });
   }
 </script>
 </body>
@@ -729,6 +800,49 @@ ABOUT_PAGE = """<!DOCTYPE html>
 def about():
     """Serve the About SteamSifter page."""
     return ABOUT_PAGE
+
+
+@app.route("/contact", methods=["POST"])
+@limiter.limit("5 per hour; 2 per minute")
+def contact():
+    """Receive a contact-form submission and email it to the owner via Gmail."""
+    if request.form.get("website"):            # honeypot: bots fill hidden fields
+        return jsonify({"ok": True})           # silently drop
+    name = (request.form.get("name") or "").strip()[:100]
+    email = (request.form.get("email") or "").strip()[:200]
+    message = (request.form.get("message") or "").strip()[:5000]
+    if not name or not email or not message:
+        return jsonify({"error": "Please fill in your name, email, and message."}), 400
+    if not _EMAIL_RE.match(email):
+        return jsonify({"error": "Please enter a valid email address."}), 400
+    if not GMAIL_USER or not GMAIL_APP_PASSWORD:
+        return jsonify({"error": "The contact form is not configured right now."}), 503
+    try:
+        _send_contact_email(name, email, message)
+    except Exception as err:
+        print(f"Contact email failed: {err}")
+        return jsonify({"error": "Could not send right now. Please try again later."}), 500
+    return jsonify({"ok": True})
+
+
+def _send_contact_email(name, email, message):
+    """Send one contact-form ticket to the owner's inbox via Gmail SMTP."""
+    safe_name = name.replace("\n", " ").replace("\r", " ")   # block header injection
+    msg = EmailMessage()
+    msg["Subject"] = f"SteamSifter feedback from {safe_name}"
+    msg["From"] = GMAIL_USER
+    msg["To"] = CONTACT_TO
+    msg["Reply-To"] = email                    # Reply in Gmail goes to the sender
+    msg.set_content(
+        "New SteamSifter contact form submission:\n\n"
+        f"Name: {safe_name}\n"
+        f"Email: {email}\n\n"
+        f"Message:\n{message}\n"
+    )
+    with smtplib.SMTP("smtp.gmail.com", 587, timeout=20) as smtp:
+        smtp.starttls()
+        smtp.login(GMAIL_USER, GMAIL_APP_PASSWORD)
+        smtp.send_message(msg)
 
 
 # Small per-worker cache of generated share cards, so repeat crawler hits and
