@@ -705,21 +705,23 @@ ABOUT_PAGE = """<!DOCTYPE html>
       <li><strong>Classify:</strong> each review is tagged with sentiment and a category (bug, performance, gameplay, cheating, monetization, UI/UX, content, community, praise) using structured model output. Batches run concurrently to keep it fast.</li>
       <li><strong>Theme:</strong> reviews are grouped into specific, named themes for each side, by an LLM pass for typical volumes or by embeddings + k-means clustering at scale (chosen automatically).</li>
       <li><strong>Rank by impact:</strong> themes are sorted by frequency plus behavioral weight, so issues raised by long-playtime, highly-upvoted reviewers rank above low-effort rage reviews.</li>
-      <li><strong>Present:</strong> a dashboard with a summary scoreboard, a sentiment donut, a sentiment-over-time trend, and an Issues / Praise toggle with ranked theme cards and clickable example quotes, each showing the reviewer's avatar and name plus an English translation for non-English reviews.</li>
+      <li><strong>Present:</strong> a dashboard with a summary scoreboard, a sentiment donut, a sentiment-over-time trend, and an Issues / Praise toggle with ranked theme cards and clickable example quotes, each showing the reviewer's avatar and name plus an English translation for non-English reviews. Every report also offers live filters (recommendation, playtime, language), a print / save-as-PDF export, and a rich link-preview card when shared.</li>
     </ol>
     <p class="note">"Impact" is an inferred heuristic (frequency, sentiment, playtime, helpful-votes), not ground truth. It is presented as an informed estimate.</p>
 
     <h2>Tech Stack</h2>
     <ul>
-      <li><strong>Reviews:</strong> Steam public appreviews API (free, no key), plus storesearch for name-to-app-ID lookups</li>
-      <li><strong>AI:</strong> OpenAI (gpt-4.1-mini) with structured/JSON output, swappable to free-tier Gemini; concurrent batched classification, and theming that scales via OpenAI embeddings + k-means clustering</li>
-      <li><strong>Frontend:</strong> Steam-styled, mobile-responsive UI with Chart.js sentiment/category charts and a summary scoreboard</li>
-      <li><strong>Backend:</strong> Flask and gunicorn, background jobs with a live progress bar, per-game caching persisted to Redis</li>
+      <li><strong>Reviews and search:</strong> Steam's public appreviews API (free, no key), plus the games-filtered storefront search that surfaces niche titles over DLC</li>
+      <li><strong>AI and ML:</strong> OpenAI (gpt-4.1-mini) with structured output via Pydantic, swappable to free-tier Gemini; concurrent batched classification, plus theming that scales via OpenAI embeddings and scikit-learn k-means, with a centroid-merge and LLM dedupe pass to consolidate duplicate themes</li>
+      <li><strong>Frontend:</strong> Steam-styled, mobile-responsive UI with Chart.js charts, a summary scoreboard, a Steam-style rating badge, live review filters, and a print / save-as-PDF view</li>
+      <li><strong>Backend:</strong> Flask and gunicorn, background jobs with a live progress bar, a Redis-shared (multi-worker-ready) job store, and per-game caching persisted to Redis</li>
+      <li><strong>Sharing and security:</strong> dynamic OpenGraph share cards generated with Pillow, plus a hardening pass (app-ID validation, rate-limited admin auth, security headers, DOM-safe rendering)</li>
+      <li><strong>Deployment:</strong> Render on the custom domain steamsifter.com (Cloudflare DNS), configured entirely through environment variables</li>
     </ul>
 
     <h2>Current Limitations</h2>
-    <p>SteamSifter is deployed and open to anyone, but it is a solo project tuned for light traffic: a single worker on a free Render instance sharing one AI key. A first-time analysis takes about one to a few minutes depending on volume, and scales up to ~1,500 reviews via an embedding-based theming path; results are cached so popular titles are only re-analyzed when their reviews grow. The main remaining limit is concurrency under many simultaneous users.</p>
-    <p>As of June 18, 2026, SteamSifter runs on the OpenAI API (gpt-4.1-mini) and can switch to free-tier Gemini when needed.</p>
+    <p>SteamSifter is deployed and open to anyone, but it is a solo project tuned for light traffic: a single worker on a free Render instance sharing one AI key. A first-time analysis takes about one to a few minutes depending on volume, and scales up to ~1,500 reviews via an embedding-based theming path; results are cached so popular titles are only re-analyzed when their reviews grow. The code is multi-worker ready, so scaling is mostly a matter of paid hosting rather than a rewrite.</p>
+    <p>As of June 24, 2026, SteamSifter runs on the OpenAI API (gpt-4.1-mini) and can switch to free-tier Gemini when needed.</p>
   </main>
 </body>
 </html>"""
