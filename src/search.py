@@ -13,6 +13,7 @@ to empty. Powers the web app's search bar.
 """
 
 import re
+from html import unescape
 
 import requests
 
@@ -50,6 +51,7 @@ def _parse_suggest(html: str, limit: int) -> list:
             # No match_name div: strip tags, then drop a trailing price token.
             text = " ".join(_TAG_RE.sub(" ", inner).split())
             name = _PRICE_TAIL_RE.sub("", text).strip()
+        name = unescape(name)
         if not name:
             continue
         seen.add(appid)
