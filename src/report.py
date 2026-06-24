@@ -982,7 +982,7 @@ def build_html(analysis: dict, title: str, refresh_state: dict = None) -> str:
   .navsearch {{ position: relative; flex: 1; max-width: 320px; }}
   .navsearch input {{ width: 100%; padding: 8px 12px; border-radius: 3px; border: 1px solid #2a3a4d; background: #316282; color: #fff; font-size: 13px; }}
   .navsearch input::placeholder {{ color: #c6dbec; }}
-  .navresults {{ position: absolute; left: 0; right: 0; top: 38px; background: #16202d; border: 1px solid #2a3a4d; border-radius: 3px; overflow: hidden; z-index: 5; }}
+  .navresults {{ position: absolute; left: 0; right: 0; top: 38px; background: #16202d; border: 1px solid #2a3a4d; border-radius: 3px; overflow-y: auto; max-height: 340px; z-index: 5; }}
   .navresult {{ display: flex; align-items: center; gap: 10px; padding: 8px 10px; cursor: pointer; }}
   .navresult:hover {{ background: #1f3346; }}
   .navresult img {{ width: 46px; height: 18px; object-fit: cover; border-radius: 2px; background: #0e1620; }}

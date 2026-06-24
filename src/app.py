@@ -175,7 +175,7 @@ HOME_PAGE = """<!DOCTYPE html>
   p.sub { color: #8f98a0; margin: 0 0 26px; }
   .search { position: relative; }
   input[type=text] { width: 100%; padding: 14px 16px; font-size: 16px; border-radius: 8px; border: 1px solid #2a475e; background: #16202d; color: #fff; }
-  .results { position: absolute; left: 0; right: 0; top: 56px; background: #16202d; border: 1px solid #2a475e; border-radius: 8px; overflow: hidden; z-index: 5; text-align: left; }
+  .results { position: absolute; left: 0; right: 0; top: 56px; background: #16202d; border: 1px solid #2a475e; border-radius: 8px; overflow-y: auto; max-height: 360px; z-index: 5; text-align: left; }
   .result { display: flex; align-items: center; gap: 12px; padding: 10px 12px; cursor: pointer; }
   .result:hover { background: #1f3346; }
   .result img { width: 60px; height: 23px; object-fit: cover; border-radius: 3px; background: #0e1620; }
@@ -293,7 +293,7 @@ EMPTY_PAGE = """<!DOCTYPE html>
   p.sub { color: #8f98a0; margin: 0 0 22px; }
   .search { position: relative; text-align: left; }
   input[type=text] { width: 100%; padding: 14px 16px; font-size: 16px; border-radius: 8px; border: 1px solid #2a475e; background: #16202d; color: #fff; }
-  .results { position: absolute; left: 0; right: 0; top: 56px; background: #16202d; border: 1px solid #2a475e; border-radius: 8px; overflow: hidden; z-index: 5; }
+  .results { position: absolute; left: 0; right: 0; top: 56px; background: #16202d; border: 1px solid #2a475e; border-radius: 8px; overflow-y: auto; max-height: 360px; z-index: 5; }
   .result { display: flex; align-items: center; gap: 12px; padding: 10px 12px; cursor: pointer; }
   .result:hover { background: #1f3346; }
   .result img { width: 60px; height: 23px; object-fit: cover; border-radius: 3px; background: #0e1620; }
