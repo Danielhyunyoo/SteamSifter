@@ -934,6 +934,7 @@ def build_html(analysis: dict, title: str, refresh_state: dict = None) -> str:
         og_img = f"{SITE_URL}/og/{appid}.png?t={quote(title)}"
         og_url = f"{SITE_URL}/analyze?appid={appid}&title={quote(title)}"
         og_tags = (
+            f'<meta name="description" content="{esc(og_desc)}">'
             '<meta property="og:type" content="website">'
             '<meta property="og:site_name" content="SteamSifter">'
             f'<meta property="og:title" content="{esc(og_title)}">'
