@@ -930,7 +930,7 @@ def build_html(analysis: dict, title: str, refresh_state: dict = None) -> str:
             bits.append(f"Top fix: {top_fix_name}")
         detail = " \u00b7 ".join(bits) or "AI review analysis"
         og_desc = f"{total_reviews} reviews analyzed. {detail}."
-        og_title = f"{title} \u2014 SteamSifter review analysis"
+        og_title = f"{title} - SteamSifter review analysis"
         og_img = f"{SITE_URL}/og/{appid}.png?t={quote(title)}"
         og_url = f"{SITE_URL}/analyze?appid={appid}&title={quote(title)}"
         og_tags = (

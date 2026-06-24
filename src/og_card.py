@@ -177,15 +177,6 @@ def render(appid, title, analysis=None, banner=None):
     else:
         draw.text((x, y), "Review intelligence for game studios", font=f_sub, fill=SUBTLE, anchor="lt")
 
-    # Call-to-action pill, bottom-left, so the card invites a click.
-    cta = "View the full report  →"
-    f_cta = _font("DejaVuSans-Bold.ttf", 24)
-    cta_w = draw.textlength(cta, font=f_cta) + 40
-    cta_h = 46
-    cy0 = H - PAD - cta_h
-    draw.rounded_rectangle((x, cy0, x + cta_w, cy0 + cta_h), radius=8, fill=BLUE)
-    draw.text((x + cta_w / 2, cy0 + cta_h / 2), cta, font=f_cta, fill=(14, 22, 32), anchor="mm")
-
     out = io.BytesIO()
     base.save(out, format="PNG")
     return out.getvalue()
