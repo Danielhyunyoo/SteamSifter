@@ -134,6 +134,19 @@ def render(appid, title, analysis=None, banner=None):
         draw.rounded_rectangle((px, py, px + pill_w, py + pill_h), radius=8, fill=rbg)
         draw.text((px + pill_w / 2, py + pill_h / 2), label, font=f_pill, fill=rfg, anchor="mm")
 
+    # Positive / negative split, upper-right (mirrors the report scoreboard).
+    if analysis is not None:
+        st = analysis.get("sentiment_totals", {}) or {}
+        tot = st.get("positive", 0) + st.get("negative", 0) + st.get("neutral", 0)
+        if tot:
+            f_snum = _font("DejaVuSans-Bold.ttf", 50)
+            f_slab = _font("DejaVuSans.ttf", 22)
+            rx = W - PAD
+            draw.text((rx, 160), f"{round(st.get('positive', 0) / tot * 100)}%", font=f_snum, fill=GREEN, anchor="rm")
+            draw.text((rx, 197), "Positive", font=f_slab, fill=SUBTLE, anchor="rm")
+            draw.text((rx, 250), f"{round(st.get('negative', 0) / tot * 100)}%", font=f_snum, fill=RED, anchor="rm")
+            draw.text((rx, 287), "Negative", font=f_slab, fill=SUBTLE, anchor="rm")
+
     # Everything below is a single left-aligned column at the left margin.
     x = PAD
     full_w = W - 2 * PAD
