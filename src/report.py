@@ -41,6 +41,7 @@ NOISE_LABEL = "noise"       # reviews filtered out as low-signal
 
 # Absolute base URL for OpenGraph image/url tags (override per environment).
 SITE_URL = os.environ.get("SITE_URL", "https://steamsifter.com").rstrip("/")
+CARD_VERSION = "2"   # bump to refresh all social cards after a card redesign
 
 # Steam-style thumb icon (points up). The "down" variant reuses it rotated.
 THUMB_SVG = (
@@ -832,7 +833,8 @@ QOL_JS = """<script>
   });
 
   window.copyReportLink = function (btn) {
-    navigator.clipboard.writeText(window.location.href).then(function () {
+    var url = (btn && btn.getAttribute('data-share')) || window.location.href;
+    navigator.clipboard.writeText(url).then(function () {
       var prev = btn.textContent;
       btn.textContent = 'Copied!';
       setTimeout(function () { btn.textContent = prev; }, 1500);
@@ -913,6 +915,12 @@ def build_html(analysis: dict, title: str, refresh_state: dict = None) -> str:
     # refresh_state on the web app). onerror hides it for titles with no header
     # image, so a missing banner never leaves a broken-image icon.
     appid = (refresh_state or {}).get("appid", "")
+    # Cache version = analysis save time + card-template version, so the share
+    # link changes on either a re-analysis OR a card redesign (forces Discord et
+    # al. to re-scrape instead of showing a stale cached embed).
+    cache_ver = f"{int(analysis.get('cached_at') or 0)}.{CARD_VERSION}"
+    share_url = (f"{SITE_URL}/analyze?appid={appid}&title={quote(title)}&v={cache_ver}"
+                 if appid else "")
     thumb_html = (
         f'<img class="gamethumb" alt="" '
         f'src="https://cdn.cloudflare.steamstatic.com/steam/apps/{esc(appid)}/header.jpg" '
@@ -935,9 +943,8 @@ def build_html(analysis: dict, title: str, refresh_state: dict = None) -> str:
         detail = " \u00b7 ".join(bits) or "AI review analysis"
         og_desc = f"{total_reviews} reviews analyzed. {detail}."
         og_title = f"{title} - SteamSifter review analysis"
-        ver = int(analysis.get("cached_at") or 0)   # busts caches on re-analysis
-        og_img = f"{SITE_URL}/og/{appid}.png?t={quote(title)}&v={ver}"
-        og_url = f"{SITE_URL}/analyze?appid={appid}&title={quote(title)}"
+        og_img = f"{SITE_URL}/og/{appid}.png?t={quote(title)}&v={cache_ver}"
+        og_url = share_url
         og_tags = (
             f'<meta name="description" content="{esc(og_desc)}">'
             '<meta property="og:type" content="website">'
@@ -968,7 +975,7 @@ def build_html(analysis: dict, title: str, refresh_state: dict = None) -> str:
         f'{total_reviews} reviews &middot; Analyzed {analyzed_rel}</div>'
         f'{refresh_html}'
         '<button class="printbtn" onclick="window.print()" title="Print or save this report as a PDF">Print / Save PDF</button>'
-        '<button class="printbtn copybtn" onclick="copyReportLink(this)" title="Copy a shareable link to this report">Copy link</button>'
+        f'<button class="printbtn copybtn" data-share="{esc(share_url)}" onclick="copyReportLink(this)" title="Copy a shareable link to this report">Copy link</button>'
         '</div>'
         '</div>'
         '<div class="navsearch">'
