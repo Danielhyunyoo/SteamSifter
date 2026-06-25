@@ -452,6 +452,7 @@ ANALYZING_PAGE = """<!DOCTYPE html>
   .msg { color: #8f98a0; font-size: 14px; min-height: 20px; }
   .flavor { color: #66c0f4; font-size: 13px; min-height: 18px; margin-top: 12px;
            opacity: 0; transition: opacity .45s ease; }
+  .elapsed { color: #66758a; font-size: 13px; margin-top: 10px; font-variant-numeric: tabular-nums; }
   .err { color: #e06c75; font-size: 14px; margin-top: 14px; }
   .gamethumb { width: 240px; max-width: 100%; height: auto; border-radius: 6px;
                border: 1px solid #2a475e; margin: 20px auto 18px; display: none; }
@@ -466,6 +467,7 @@ ANALYZING_PAGE = """<!DOCTYPE html>
     <div id="pct" class="pct">0 / 1000</div>
     <div id="msg" class="msg">Starting...</div>
     <div id="flavor" class="flavor"></div>
+    <div id="elapsed" class="elapsed">Elapsed 0:00</div>
     <div id="err" class="err"></div>
   </div>
 <script>
@@ -516,6 +518,16 @@ ANALYZING_PAGE = """<!DOCTYPE html>
   var shown = 0;      // smoothly animated value, so the counter never looks frozen
   var done = false;
   var hasError = false;
+
+  // Elapsed-time counter, so a long analysis always shows it is still working.
+  var startTime = Date.now();
+  var elapsedEl = document.getElementById('elapsed');
+  var elapsedTimer = setInterval(function () {
+    var s = Math.floor((Date.now() - startTime) / 1000);
+    var m = Math.floor(s / 60), sec = s % 60;
+    if (elapsedEl) elapsedEl.textContent = 'Elapsed ' + m + ':' + (sec < 10 ? '0' : '') + sec;
+    if (hasError) clearInterval(elapsedTimer);
+  }, 1000);
 
   function redirect() {
     window.location = '/analyze?appid=' + encodeURIComponent(appid) +
