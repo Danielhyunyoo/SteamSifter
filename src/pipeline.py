@@ -179,6 +179,14 @@ def get_analysis(app_id: str, max_reviews: int = DEFAULT_MAX_REVIEWS, refresh: b
         on_progress=lambda f, msg: report(55 + int(f * 43), msg),
     )
 
+    # Passively collect (review text, LLM label) samples for future distillation
+    # of a fast local classifier. Best-effort; never blocks the analysis.
+    try:
+        import training_data
+        training_data.log_samples(classified)
+    except Exception as err:
+        print(f"Training-data logging skipped ({err}).")
+
     # Attach each example review's Steam permalink so users can verify it is real.
     _attach_review_urls(analysis, app_id)
 

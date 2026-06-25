@@ -26,3 +26,5 @@ steamsifter_report.html
 .idea/
 .DS_Store
 Thumbs.db
+training_samples.jsonl
+src/data/

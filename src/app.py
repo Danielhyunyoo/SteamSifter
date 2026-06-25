@@ -843,7 +843,10 @@ def _admin_page(message, signed_in=False):
     """Render the admin page with a message and either a form or sign-out."""
     note = f'<div class="msg">{message}</div>' if message else ''
     if signed_in:
+        import training_data
         body = (note +
+                f'<div class="msg">Training samples collected: {training_data.count():,}</div>'
+                '<a class="btn" href="/admin/training.jsonl">Download training data</a> '
                 '<a class="btn" href="/admin/logout">Sign out</a> '
                 '<a class="btn ghost" href="/">Back to site</a>')
     else:
@@ -877,6 +880,18 @@ def admin_logout():
     """Clear the admin session."""
     session.pop("admin", None)
     return redirect("/")
+
+
+@app.route("/admin/training.jsonl")
+def admin_training():
+    """Download the collected (text, label) training dataset (owner only)."""
+    if not is_admin():
+        return redirect("/admin")
+    import training_data
+    return Response(
+        training_data.export_jsonl(),
+        mimetype="application/x-ndjson",
+        headers={"Content-Disposition": "attachment; filename=training_samples.jsonl"})
 
 
 if __name__ == "__main__":
