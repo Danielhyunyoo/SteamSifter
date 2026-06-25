@@ -111,6 +111,15 @@ def set_security_headers(resp):
         "connect-src 'self'; "
         "object-src 'none'; base-uri 'self'; frame-ancestors 'none'",
     )
+    # Lock down browser features the app never uses.
+    resp.headers.setdefault(
+        "Permissions-Policy",
+        "geolocation=(), camera=(), microphone=(), payment=(), usb=()")
+    # HSTS: force HTTPS for a year (incl. subdomains). Only over real HTTPS, so
+    # local http dev is unaffected. request.is_secure honors X-Forwarded-Proto.
+    if request.is_secure:
+        resp.headers.setdefault(
+            "Strict-Transport-Security", "max-age=31536000; includeSubDomains")
     return resp
 
 
