@@ -67,6 +67,25 @@ def _truncate(draw, text, font, max_w):
     return (text.rstrip() + ell) if text else ell
 
 
+def _wrap(draw, text, font, max_w, max_lines=2):
+    """Wrap text into up to max_lines lines; the final line truncates if needed."""
+    words = (text or "").split()
+    lines, cur = [], ""
+    for i, w in enumerate(words):
+        trial = (cur + " " + w).strip()
+        if cur and draw.textlength(trial, font=font) > max_w:
+            lines.append(cur)
+            cur = w
+            if len(lines) == max_lines - 1:
+                lines.append(_truncate(draw, " ".join(words[i:]), font, max_w))
+                return lines
+        else:
+            cur = trial
+    if cur:
+        lines.append(cur)
+    return lines or [""]
+
+
 def _vgrad(top_a, bot_a):
     g = Image.new("L", (1, H))
     for y in range(H):
@@ -165,9 +184,12 @@ def render(appid, title, analysis=None, banner=None):
     else:
         y = 170
 
-    # Title.
-    draw.text((x, y), _truncate(draw, title, f_title, full_w), font=f_title, fill=WHITE, anchor="lt")
-    y += 58
+    # Title (wraps to a second line instead of cutting off when it is long).
+    title_lines = _wrap(draw, title, f_title, full_w, 2)
+    line_h = 56
+    for i, line in enumerate(title_lines):
+        draw.text((x, y + i * line_h), line, font=f_title, fill=WHITE, anchor="lt")
+    y += 58 + (len(title_lines) - 1) * line_h
 
     if analysis is not None:
         total = analysis.get("total_reviews", 0)
