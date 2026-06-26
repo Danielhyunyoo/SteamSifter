@@ -482,7 +482,7 @@ ANALYZING_PAGE = """<!DOCTYPE html>
   if (appid) {
     thumb.onload = function () { thumb.style.display = 'block'; };
     thumb.src = 'https://cdn.cloudflare.steamstatic.com/steam/apps/' +
-      encodeURIComponent(appid) + '/header.jpg';
+      encodeURIComponent(appid) + '/header.jpg?t=' + Math.floor(Date.now() / 86400000);
   }
 
   const fill = document.getElementById('fill');

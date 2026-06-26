@@ -13,6 +13,7 @@ analysis is cached yet (banner + title, no stats).
 
 import io
 import os
+import time
 
 import requests
 from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageEnhance
@@ -51,7 +52,8 @@ def _cover(img, w, h):
 
 
 def _fetch_banner(appid):
-    r = requests.get(HEADER_URL.format(appid=appid), headers=HEADERS, timeout=10)
+    url = HEADER_URL.format(appid=appid) + f"?t={int(time.time() // 86400)}"
+    r = requests.get(url, headers=HEADERS, timeout=10)
     r.raise_for_status()
     return Image.open(io.BytesIO(r.content)).convert("RGB")
 

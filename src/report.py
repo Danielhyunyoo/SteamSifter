@@ -923,7 +923,7 @@ def build_html(analysis: dict, title: str, refresh_state: dict = None) -> str:
                  if appid else "")
     thumb_html = (
         f'<img class="gamethumb" alt="" '
-        f'src="https://cdn.cloudflare.steamstatic.com/steam/apps/{esc(appid)}/header.jpg" '
+        f'src="https://cdn.cloudflare.steamstatic.com/steam/apps/{esc(appid)}/header.jpg?t={date.today().toordinal()}" '
         'onerror="this.style.display=\'none\'">'
     ) if appid else ''
 
