@@ -302,6 +302,19 @@ def aggregate_themes(reviews: list, themes: list) -> list:
             key=lambda r: (r.get("helpful_votes", 0), r.get("playtime_at_review_hours", 0)),
             reverse=True,
         )
+        # Pick example quotes: the most helpful overall, but guarantee up to two
+        # English ones if the theme has any, so the English-only review filter
+        # still has quotes to show on majority-foreign games.
+        english_items = [r for r in items_sorted if _is_english(r.get("language"))]
+        picked, seen = [], set()
+        for r in items_sorted[:2] + english_items[:2] + items_sorted:
+            key = (r.get("steamid"), r.get("text"))
+            if key in seen:
+                continue
+            seen.add(key)
+            picked.append(r)
+            if len(picked) >= EXAMPLES_PER_THEME:
+                break
         examples = [
             {
                 "text": r["text"][:300],
@@ -312,7 +325,7 @@ def aggregate_themes(reviews: list, themes: list) -> list:
                 "language": r.get("language"),
                 "en": _is_english(r.get("language")),
             }
-            for r in items_sorted[:EXAMPLES_PER_THEME]
+            for r in picked
         ]
 
         # Impact score: the summed weight of every review under this theme.
