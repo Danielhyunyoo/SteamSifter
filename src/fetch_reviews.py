@@ -211,6 +211,52 @@ def fetch_review_total(app_id: str, language: str = "all") -> int:
         return None
 
 
+APPDETAILS_URL = "https://store.steampowered.com/api/appdetails"
+
+# Steam's standard mature-content descriptor ids -> human labels.
+_CONTENT_DESCRIPTORS = {
+    1: "Some Nudity or Sexual Content",
+    2: "Frequent Violence or Gore",
+    3: "Adult Only Sexual Content",
+    4: "Frequent Nudity or Sexual Content",
+    5: "General Mature Content",
+}
+
+
+def fetch_game_context(app_id: str, language: str = "english") -> str:
+    """
+    Return a short blurb describing the game (title, genres, mature-content
+    descriptors, one-line description) to ground the classifier, so it can tell
+    sincere feedback from sarcasm (e.g. "family friendly" on a gore game).
+    Best-effort: returns "" on any failure.
+    """
+    try:
+        resp = requests.get(APPDETAILS_URL, params={"appids": app_id, "l": language},
+                            headers=HEADERS, timeout=REQUEST_TIMEOUT)
+        resp.raise_for_status()
+        entry = resp.json().get(str(app_id), {})
+        if not entry.get("success"):
+            return ""
+        d = entry.get("data", {}) or {}
+    except (requests.RequestException, ValueError, AttributeError):
+        return ""
+
+    parts = []
+    if d.get("name"):
+        parts.append(f"Title: {d['name']}")
+    genres = ", ".join(g.get("description", "") for g in d.get("genres", []) if g.get("description"))
+    if genres:
+        parts.append(f"Genres: {genres}")
+    ids = (d.get("content_descriptors") or {}).get("ids") or []
+    mature = ", ".join(_CONTENT_DESCRIPTORS[i] for i in ids if i in _CONTENT_DESCRIPTORS)
+    if mature:
+        parts.append(f"Mature content: {mature}")
+    desc = (d.get("short_description") or "").strip()
+    if desc:
+        parts.append(f"Description: {desc[:400]}")
+    return " | ".join(parts)
+
+
 # ----------------------------------------------------------------------------
 # Reviewer profiles: avatar + username (so identical quotes read as distinct people)
 # ----------------------------------------------------------------------------

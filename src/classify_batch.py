@@ -64,7 +64,7 @@ class BatchClassification(BaseModel):
 # Building the batch prompt
 # ----------------------------------------------------------------------------
 
-def build_batch_prompt(texts: list) -> str:
+def build_batch_prompt(texts: list, context: str = "") -> str:
     """
     Build a single prompt that lists several reviews, each with its batch index.
 
@@ -81,8 +81,10 @@ def build_batch_prompt(texts: list) -> str:
         numbered.append(f"Review {i}:\n{snippet}")
 
     reviews_block = "\n\n".join(numbered)
+    context_block = f"About this game (for context):\n{context}\n\n" if context else ""
 
     return (
+        context_block +
         "You are classifying players' reviews of a video game on Steam.\n"
         "For EACH review below, return its index, sentiment "
         "(positive/negative/neutral), the single best category from:\n"
@@ -90,7 +92,11 @@ def build_batch_prompt(texts: list) -> str:
         "content, ui_ux, praise, other,\n"
         "and is_constructive: true if the review gives real, on-topic feedback "
         "about the game; false if it is noise (a joke, meme, one-word or empty "
-        "review, off-topic rant, or review-bomb spam with no useful content).\n\n"
+        "review, off-topic rant, review-bomb spam, or sarcasm not meant "
+        "literally). Use the game context above to catch sarcasm: praise that "
+        "contradicts what the game actually is (e.g. calling a violent or "
+        "adult-only game 'family friendly' or 'great for kids') is a joke, not "
+        "real feedback, so mark it is_constructive=false.\n\n"
         "Return one classification object per review.\n\n"
         f"{reviews_block}"
     )
@@ -100,7 +106,7 @@ def build_batch_prompt(texts: list) -> str:
 # Classifying one batch (with retry on failure)
 # ----------------------------------------------------------------------------
 
-def classify_batch(client, texts: list) -> list:
+def classify_batch(client, texts: list, context: str = "") -> list:
     """
     Classify one batch of review texts, retrying if the call fails.
 
@@ -112,7 +118,7 @@ def classify_batch(client, texts: list) -> list:
         A list of BatchClassification objects (possibly fewer than len(texts)
         if the model omits some; the caller fills any gaps).
     """
-    prompt = build_batch_prompt(texts)
+    prompt = build_batch_prompt(texts, context)
 
     for attempt in range(1, MAX_RETRIES + 1):
         try:
@@ -136,9 +142,9 @@ def classify_batch(client, texts: list) -> list:
 # Classifying a whole list of reviews
 # ----------------------------------------------------------------------------
 
-def _classify_one(client, batch: list) -> None:
+def _classify_one(client, batch: list, context: str = "") -> None:
     """Classify one batch and write the labels onto its review dicts in place."""
-    results = classify_batch(client, [r["text"] for r in batch])
+    results = classify_batch(client, [r["text"] for r in batch], context)
     by_index = {r.index: r for r in results}
     for i, review in enumerate(batch):
         label = by_index.get(i)
@@ -153,7 +159,7 @@ def _classify_one(client, batch: list) -> None:
             review["is_constructive"] = True   # don't filter what we are unsure about
 
 
-def classify_all(client, reviews: list, on_progress=None) -> list:
+def classify_all(client, reviews: list, on_progress=None, context: str = "") -> list:
     """
     Classify every review and attach sentiment + category + is_constructive.
 
@@ -177,7 +183,7 @@ def classify_all(client, reviews: list, on_progress=None) -> list:
     done = 0
     lock = threading.Lock()
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
-        futures = [pool.submit(_classify_one, client, b) for b in batches]
+        futures = [pool.submit(_classify_one, client, b, context) for b in batches]
         for fut in as_completed(futures):
             fut.result()   # surface any unexpected error
             with lock:

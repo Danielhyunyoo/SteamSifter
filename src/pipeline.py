@@ -23,7 +23,8 @@ import time
 
 from llm import get_client, generate_json
 from pydantic import BaseModel
-from fetch_reviews import fetch_reviews, save_reviews, fetch_review_total, fetch_player_summaries
+from fetch_reviews import (fetch_reviews, save_reviews, fetch_review_total,
+                           fetch_player_summaries, fetch_game_context)
 from classify_batch import classify_all, save_classified
 from themes import analyze_both
 from report import build_html
@@ -181,9 +182,14 @@ def get_analysis(app_id: str, max_reviews: int = DEFAULT_MAX_REVIEWS, refresh: b
 
     # Step 2: classify (sentiment, category, is_constructive). Maps to 10%-55%.
     report(10, "Classifying reviews")
+    # Game-context blurb so the classifier can spot sarcasm (e.g. "family
+    # friendly" on a gore game) given what the game actually is.
+    game_context = fetch_game_context(app_id)
+
     classified = classify_all(
         client, reviews,
         on_progress=lambda f: report(10 + int(f * 45), "Classifying reviews"),
+        context=game_context,
     )
     save_classified(classified, paths["reviews"])
 
