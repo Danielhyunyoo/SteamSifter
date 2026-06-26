@@ -78,49 +78,53 @@ class _Translation(BaseModel):
     english: str
 
 
-def _needs_translation(ex) -> bool:
-    """True if an example quote should be translated to English. Uses Steam's
-    language tag (reliable, and catches Latin-script languages like Turkish that
-    the character heuristic misses); falls back to the heuristic if no tag."""
-    lang = (ex.get("language") or "").lower()
-    if lang:
-        return lang != "english"
-    return _looks_foreign(ex.get("text", ""))
+def _translate_batch(client, batch) -> None:
+    """
+    Translate any NON-English quote in one batch, in place.
 
-
-def _looks_foreign(text: str) -> bool:
-    """Heuristic: True if the text is mostly non-Latin letters (Cyrillic, CJK, etc.)."""
-    letters = [c for c in (text or "") if c.isalpha()]
-    if len(letters) < 3:
-        return False
-    non_ascii = sum(1 for c in letters if ord(c) > 127)
-    return non_ascii / len(letters) > 0.3
+    The model detects the language itself. We do NOT rely on Steam's language
+    tag, which is the reviewer's client locale, not what they actually wrote (a
+    Turkish review from an English client is tagged "english"), nor on a character
+    heuristic, which misses Latin-script languages. English quotes are left as-is.
+    """
+    numbered = "\n".join(f"{i}: {ex.get('text', '')[:300]}" for i, ex in enumerate(batch))
+    prompt = (
+        "Below are numbered Steam game reviews. Some are written in English and "
+        "some are not. For EVERY review that is NOT written in English, return its "
+        "index and a natural, concise English translation. Do NOT return anything "
+        "for reviews that are already in English.\n\n"
+        f"{numbered}"
+    )
+    try:
+        results = generate_json(client, prompt, list[_Translation]) or []
+    except Exception as err:
+        print(f"  Translation batch failed ({err}); leaving as-is.")
+        return
+    by_index = {r.index: r.english for r in results}
+    for i, ex in enumerate(batch):
+        english = (by_index.get(i) or "").strip()
+        original = (ex.get("text", "") or "")[:300].strip()
+        # Store only genuine translations (skip blanks and English echoed back).
+        if english and english.lower() != original.lower():
+            ex["translation"] = english
 
 
 def _attach_translations(analysis: dict, client) -> None:
-    """Add an English 'translation' to foreign-language example quotes (one call)."""
+    """
+    Add an English 'translation' to every non-English example quote.
+
+    Quotes go to the model in batches and IT decides what is foreign, so anything
+    non-English is caught regardless of script or the unreliable Steam tag.
+    """
     examples = []
     for rec in analysis.get("negative", []) + analysis.get("positive", []):
         if rec.get("theme") in ("noise", "unclear"):
             continue
         examples.extend(rec.get("examples", []))
-
-    targets = [ex for ex in examples if _needs_translation(ex)]
-    if not targets:
+    if not examples:
         return
-
-    numbered = "\n".join(f"{i}: {ex.get('text', '')[:300]}" for i, ex in enumerate(targets))
-    prompt = (
-        "Translate each of these short Steam game reviews into natural, concise "
-        "English. Return each review's index and its English translation.\n\n"
-        f"{numbered}"
-    )
-    results = generate_json(client, prompt, list[_Translation]) or []
-    by_index = {r.index: r.english for r in results}
-    for i, ex in enumerate(targets):
-        english = by_index.get(i)
-        if english:
-            ex["translation"] = english.strip()
+    for start in range(0, len(examples), 40):
+        _translate_batch(client, examples[start:start + 40])
 
 
 def _attach_authors(analysis: dict) -> None:
