@@ -107,7 +107,7 @@ def fetch_reviews(
     app_id: str,
     max_reviews: int = 300,
     review_type: str = "all",
-    language: str = "english",
+    language: str = "all",
     request_delay: float = DEFAULT_REQUEST_DELAY,
 ) -> list:
     """
@@ -185,7 +185,7 @@ def fetch_reviews(
 # Total count: how many reviews the game has right now (for the refresh gate)
 # ----------------------------------------------------------------------------
 
-def fetch_review_total(app_id: str, language: str = "english") -> int:
+def fetch_review_total(app_id: str, language: str = "all") -> int:
     """
     Return the game's current total review count for our filter, or None on
     failure. Uses Steam's query_summary, which comes back on the first page, so

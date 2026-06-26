@@ -78,6 +78,16 @@ class _Translation(BaseModel):
     english: str
 
 
+def _needs_translation(ex) -> bool:
+    """True if an example quote should be translated to English. Uses Steam's
+    language tag (reliable, and catches Latin-script languages like Turkish that
+    the character heuristic misses); falls back to the heuristic if no tag."""
+    lang = (ex.get("language") or "").lower()
+    if lang:
+        return lang != "english"
+    return _looks_foreign(ex.get("text", ""))
+
+
 def _looks_foreign(text: str) -> bool:
     """Heuristic: True if the text is mostly non-Latin letters (Cyrillic, CJK, etc.)."""
     letters = [c for c in (text or "") if c.isalpha()]
@@ -95,7 +105,7 @@ def _attach_translations(analysis: dict, client) -> None:
             continue
         examples.extend(rec.get("examples", []))
 
-    targets = [ex for ex in examples if _looks_foreign(ex.get("text", ""))]
+    targets = [ex for ex in examples if _needs_translation(ex)]
     if not targets:
         return
 
@@ -158,7 +168,7 @@ def get_analysis(app_id: str, max_reviews: int = DEFAULT_MAX_REVIEWS, refresh: b
     report(3, "Fetching reviews")
     if refresh or not os.path.exists(paths["reviews"]):
         print(f"Fetching up to {max_reviews} reviews (all sentiments)...")
-        reviews = fetch_reviews(app_id, max_reviews=max_reviews, review_type="all")
+        reviews = fetch_reviews(app_id, max_reviews=max_reviews, review_type="all", language="all")
         save_reviews(reviews, app_id, "all")
     else:
         print(f"Reusing fetched reviews from {paths['reviews']}")

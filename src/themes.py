@@ -269,13 +269,10 @@ def build_sentiment_timeline(classified: list) -> dict:
     return {"granularity": "month" if by_month else "day", "points": points}
 
 
-def _is_english(text) -> int:
-    """1 if the text is mostly Latin letters, else 0 (Cyrillic/CJK/etc. -> 0)."""
-    letters = [c for c in (text or "") if c.isalpha()]
-    if len(letters) < 3:
-        return 1
-    non_ascii = sum(1 for c in letters if ord(c) > 127)
-    return 0 if non_ascii / len(letters) > 0.3 else 1
+def _is_english(language) -> int:
+    """1 if Steam tagged the review's language as English, else 0. Reliable across
+    scripts (the old character heuristic mislabeled Turkish, Spanish, etc.)."""
+    return 1 if (language or "").lower() == "english" else 0
 
 
 def aggregate_themes(reviews: list, themes: list) -> list:
@@ -312,7 +309,8 @@ def aggregate_themes(reviews: list, themes: list) -> list:
                 "playtime_at_review_hours": r.get("playtime_at_review_hours", 0),
                 "steamid": r.get("steamid"),
                 "voted_up": r.get("voted_up"),
-                "en": _is_english(r.get("text", "")),
+                "language": r.get("language"),
+                "en": _is_english(r.get("language")),
             }
             for r in items_sorted[:EXAMPLES_PER_THEME]
         ]
@@ -450,7 +448,7 @@ def analyze_both(client, classified: list, on_progress=None) -> dict:
                 "playtime_at_review_hours": r.get("playtime_at_review_hours", 0),
                 "steamid": r.get("steamid"),
                 "voted_up": r.get("voted_up"),
-                "en": _is_english(r.get("text", "")),
+                "en": _is_english(r.get("language")),
             }
             for r in noise_sorted[:EXAMPLES_PER_THEME]
         ],
@@ -474,7 +472,7 @@ def analyze_both(client, classified: list, on_progress=None) -> dict:
             "pt": round(r.get("playtime_at_review_hours", 0) or 0, 1),
             "hv": r.get("helpful_votes", 0) or 0,
             "vu": 1 if r.get("voted_up") else 0,
-            "en": _is_english(r.get("text", "")),
+            "en": _is_english(r.get("language")),
             "dt": r.get("created_date") or "",
         })
 
