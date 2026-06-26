@@ -23,8 +23,8 @@ import time
 
 from llm import get_client, generate_json
 from pydantic import BaseModel
-from fetch_reviews import (fetch_reviews, save_reviews, fetch_review_total,
-                           fetch_player_summaries, fetch_game_context)
+from fetch_reviews import (fetch_reviews, fetch_reviews_balanced, save_reviews,
+                           fetch_review_total, fetch_player_summaries, fetch_game_context)
 from classify_batch import classify_all, save_classified
 from themes import analyze_both
 from report import build_html
@@ -173,7 +173,7 @@ def get_analysis(app_id: str, max_reviews: int = DEFAULT_MAX_REVIEWS, refresh: b
     report(3, "Fetching reviews")
     if refresh or not os.path.exists(paths["reviews"]):
         print(f"Fetching up to {max_reviews} reviews (all sentiments)...")
-        reviews = fetch_reviews(app_id, max_reviews=max_reviews, review_type="all", language="all")
+        reviews = fetch_reviews_balanced(app_id, max_reviews=max_reviews)
         save_reviews(reviews, app_id, "all")
     else:
         print(f"Reusing fetched reviews from {paths['reviews']}")

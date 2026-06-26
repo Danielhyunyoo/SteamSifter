@@ -181,6 +181,39 @@ def fetch_reviews(
     return collected[:max_reviews]
 
 
+ENGLISH_FRACTION = float(os.environ.get("ENGLISH_FRACTION", "0.5"))
+
+
+def fetch_reviews_balanced(app_id: str, max_reviews: int = 300,
+                           review_type: str = "all") -> list:
+    """
+    Fetch a sample with BOTH broad language coverage and a solid block of English.
+
+    A popular game's most-recent reviews can be overwhelmingly non-English, which
+    would leave the English-only filter empty even though millions of English
+    reviews exist. So we fetch a guaranteed English slice plus the global (all
+    languages) recent pool, then merge them, dedup by recommendation id, and cap
+    at max_reviews. This keeps the most-helpful foreign reviews while making the
+    English view usable.
+    """
+    en_target = max(1, int(max_reviews * ENGLISH_FRACTION))
+    english = fetch_reviews(app_id, max_reviews=en_target,
+                            review_type=review_type, language="english")
+    everything = fetch_reviews(app_id, max_reviews=max_reviews,
+                               review_type=review_type, language="all")
+    merged, seen = [], set()
+    for r in english + everything:           # English first, so it is guaranteed
+        rid = r.get("recommendation_id")
+        if rid and rid in seen:
+            continue
+        if rid:
+            seen.add(rid)
+        merged.append(r)
+        if len(merged) >= max_reviews:
+            break
+    return merged
+
+
 # ----------------------------------------------------------------------------
 # Total count: how many reviews the game has right now (for the refresh gate)
 # ----------------------------------------------------------------------------
