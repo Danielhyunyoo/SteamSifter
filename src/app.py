@@ -563,7 +563,7 @@ ANALYZING_PAGE = """<!DOCTYPE html>
     <div id="msg" class="msg">Starting...</div>
     <div id="flavor" class="flavor"></div>
     <div id="elapsed" class="elapsed">Elapsed 0:00</div>
-    <div class="leavehint">Safe to leave or close this tab — the analysis keeps running, and the report will be waiting when you come back.</div>
+    <div class="leavehint">Safe to leave or close this tab - the analysis keeps running, and the report will be waiting when you come back.</div>
     <div id="err" class="err"></div>
   </div>
   <footer class="site-footer">
