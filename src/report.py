@@ -838,6 +838,7 @@ window.__bannerError = function (img) {
 
 QOL_JS = """<script>
 (function () {
+  try { localStorage.removeItem('ss_job'); } catch (e) {}   // home loading widget consumed
   function countUp(el) {
     var raw = el.textContent.trim();
     var m = raw.match(/^(\\d[\\d,]*)(\\D*)$/);   // leading number + optional suffix
@@ -949,6 +950,12 @@ def build_html(analysis: dict, title: str, refresh_state: dict = None) -> str:
     cache_ver = f"{int(analysis.get('cached_at') or 0)}.{CARD_VERSION}"
     share_url = (f"{SITE_URL}/analyze?appid={appid}&title={quote(title)}&v={cache_ver}"
                  if appid else "")
+    steam_btns = (
+        f'<a class="printbtn" href="steam://openurl/https://store.steampowered.com/app/{appid}/" '
+        'title="Open in the Steam desktop app">Open in Steam</a>'
+        f'<a class="printbtn" href="https://store.steampowered.com/app/{appid}/" target="_blank" '
+        'rel="noopener" title="Open the Steam store page in your browser">Steam page</a>'
+    ) if appid else ""
     if appid:
         _srcs = [
             f"https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/{appid}/header.jpg",
@@ -1011,6 +1018,7 @@ def build_html(analysis: dict, title: str, refresh_state: dict = None) -> str:
         f'{refresh_html}'
         '<button class="printbtn" onclick="window.print()" title="Print or save this report as a PDF">Print / Save PDF</button>'
         f'<button class="printbtn copybtn" data-share="{esc(share_url)}" onclick="copyReportLink(this)" title="Copy a shareable link to this report">Copy link</button>'
+        f'{steam_btns}'
         '</div>'
         '</div>'
         '<div class="navsearch">'
@@ -1135,7 +1143,7 @@ def build_html(analysis: dict, title: str, refresh_state: dict = None) -> str:
   .refresh.disabled {{ color: #6b7785; border-color: #233040; background: transparent; cursor: not-allowed; }}
   .refresh.admin {{ border-color: #66c0f4; }}
   .admtag {{ font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: #0e1620; background: #66c0f4; border-radius: 3px; padding: 1px 5px; margin-left: 6px; }}
-  .printbtn {{ display: inline-block; margin: 10px 0 0 8px; font-size: 13px; font-weight: 600; color: #66c0f4; background: #16202d; border: 1px solid #2a475e; border-radius: 4px; padding: 6px 12px; cursor: pointer; }}
+  .printbtn {{ display: inline-block; margin: 10px 0 0 8px; font-size: 13px; font-weight: 600; color: #66c0f4; background: #16202d; border: 1px solid #2a475e; border-radius: 4px; padding: 6px 12px; cursor: pointer; text-decoration: none; }}
   .printbtn:hover {{ background: #1f3346; color: #8fd0fb; }}
   .scoreboard {{ display: flex; flex-wrap: wrap; gap: 10px; margin: 0 0 20px; }}
   .stat {{ flex: 1 1 150px; background: rgba(22, 32, 45, 0.72); border: 1px solid #2a3a4d; border-radius: 6px; padding: 12px 14px; display: flex; gap: 11px; align-items: center; }}

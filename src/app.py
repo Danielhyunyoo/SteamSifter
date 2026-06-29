@@ -192,6 +192,14 @@ HOME_PAGE = """<!DOCTYPE html>
   .result span { font-size: 14px; color: #c7d5e0; }
   .hint { color: #66758a; font-size: 12px; margin-top: 18px; }
   .site-footer { background: #171a21; border-top: 1px solid #0e1620; padding: 18px 24px; text-align: center; }
+  .bgjob { position: fixed; right: 18px; bottom: 18px; width: 280px; background: #16202d; border: 1px solid #2a475e; border-radius: 10px; padding: 14px 16px; box-shadow: 0 6px 24px rgba(0,0,0,0.4); z-index: 50; text-align: left; }
+  .bgjob-label { color: #66c0f4; font-size: 11px; letter-spacing: 1px; text-transform: uppercase; }
+  .bgjob-title { color: #fff; font-size: 15px; font-weight: 600; margin: 2px 0 8px; word-break: break-word; }
+  .bgjob-track { background: #0e1620; border-radius: 6px; height: 8px; overflow: hidden; }
+  .bgjob-fill { height: 100%; width: 0%; background: linear-gradient(90deg,#1a9fff,#66c0f4); transition: width .3s; }
+  .bgjob-status { color: #8f98a0; font-size: 12px; margin-top: 8px; min-height: 16px; }
+  .bgjob-btn { display: inline-block; margin-top: 10px; background: #66c0f4; color: #0e1620; font-weight: 600; font-size: 13px; padding: 7px 12px; border-radius: 6px; text-decoration: none; }
+  .bgjob-x { position: absolute; top: 8px; right: 10px; background: none; border: none; color: #8f98a0; font-size: 18px; cursor: pointer; line-height: 1; }
   .footer-links { display: flex; gap: 20px; justify-content: center; align-items: center; flex-wrap: wrap; }
   .footer-links a { color: #8f98a0; text-decoration: none; font-size: 14px; display: inline-flex; align-items: center; }
   .footer-links a:hover { color: #66c0f4; }
@@ -229,6 +237,15 @@ HOME_PAGE = """<!DOCTYPE html>
     </div>
     <div class="disclaimer">SteamSifter is an independent project and is not affiliated with, endorsed by, or sponsored by Valve or Steam. "Steam" is a trademark of Valve Corporation.</div>
   </footer>
+
+  <div id="bgJob" class="bgjob" style="display:none">
+    <button id="bgJobDismiss" class="bgjob-x" title="Dismiss" aria-label="Dismiss">&times;</button>
+    <div class="bgjob-label">Analyzing</div>
+    <div class="bgjob-title" id="bgJobTitle"></div>
+    <div class="bgjob-track"><div class="bgjob-fill" id="bgJobFill"></div></div>
+    <div class="bgjob-status" id="bgJobStatus">Starting...</div>
+    <a class="bgjob-btn" id="bgJobView" style="display:none">View report &rarr;</a>
+  </div>
 
 <script>
   const input = document.getElementById('q');
@@ -272,6 +289,47 @@ HOME_PAGE = """<!DOCTYPE html>
   function analyze(appid, name) {
     window.location = '/analyzing?appid=' + appid + '&title=' + encodeURIComponent(name);
   }
+
+  // Background-analysis widget: if a game is still analyzing (started before the
+  // user returned to the home page), show its progress, disable search until it
+  // finishes, then offer a button to open the finished report.
+  (function () {
+    var raw = null;
+    try { raw = JSON.parse(localStorage.getItem('ss_job') || 'null'); } catch (e) {}
+    if (!raw || !raw.job) return;
+    var box = document.getElementById('bgJob');
+    var fill = document.getElementById('bgJobFill');
+    var status = document.getElementById('bgJobStatus');
+    var view = document.getElementById('bgJobView');
+    document.getElementById('bgJobTitle').textContent = raw.title || 'your game';
+    view.href = '/analyze?appid=' + encodeURIComponent(raw.appid) + '&title=' + encodeURIComponent(raw.title || '');
+    box.style.display = 'block';
+    function setDisabled(d) {
+      input.disabled = d;
+      input.placeholder = d ? 'Analysis in progress, please wait...' : 'Search a game, e.g. Counter-Strike';
+    }
+    setDisabled(true);
+    document.getElementById('bgJobDismiss').onclick = function () {
+      try { localStorage.removeItem('ss_job'); } catch (e) {}
+      box.style.display = 'none'; setDisabled(false);
+    };
+    function finish() {
+      setDisabled(false); fill.style.width = '100%';
+      status.textContent = 'Report ready'; view.style.display = 'inline-block';
+    }
+    function poll() {
+      fetch('/progress?job=' + encodeURIComponent(raw.job))
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (d.percent != null) fill.style.width = Math.min(100, d.percent) + '%';
+          if (d.message) status.textContent = d.message;
+          if (d.done) { finish(); return; }
+          setTimeout(poll, 1200);
+        })
+        .catch(function () { setTimeout(poll, 2000); });
+    }
+    poll();
+  })();
 </script>
 </body>
 </html>"""
@@ -639,7 +697,9 @@ ANALYZING_PAGE = """<!DOCTYPE html>
   var startUrl = (force ? '/refresh' : '/start') + '?appid=' + encodeURIComponent(appid);
   fetch(startUrl)
     .then(r => r.json())
-    .then(d => { if (d.error) { showError(d.error); return; } jobId = d.job; poll(); })
+    .then(d => { if (d.error) { showError(d.error); return; } jobId = d.job;
+      try { localStorage.setItem('ss_job', JSON.stringify({job: jobId, appid: appid, title: title})); } catch (e) {}
+      poll(); })
     .catch(() => showError('Could not start analysis.'));
 
   function poll() {
