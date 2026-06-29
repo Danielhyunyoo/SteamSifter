@@ -494,9 +494,25 @@ ANALYZING_PAGE = """<!DOCTYPE html>
   // Show the game's Steam banner once it loads; stay hidden if the title has none.
   var thumb = document.getElementById('thumb');
   if (appid) {
+    window.__bannerError = function (img) {
+      try {
+        var list = JSON.parse(img.getAttribute('data-srcs') || '[]');
+        var i = (parseInt(img.getAttribute('data-i'), 10) || 0) + 1;
+        if (i < list.length) { img.setAttribute('data-i', i); img.src = list[i]; }
+        else { img.style.display = 'none'; }
+      } catch (e) { img.style.display = 'none'; }
+    };
+    var aid = encodeURIComponent(appid);
+    var srcs = [
+      'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/' + aid + '/header.jpg',
+      'https://cdn.cloudflare.steamstatic.com/steam/apps/' + aid + '/header.jpg',
+      'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/' + aid + '/capsule_616x353.jpg'
+    ];
+    thumb.setAttribute('data-srcs', JSON.stringify(srcs));
+    thumb.setAttribute('data-i', '0');
     thumb.onload = function () { thumb.style.display = 'block'; };
-    thumb.src = 'https://cdn.cloudflare.steamstatic.com/steam/apps/' +
-      encodeURIComponent(appid) + '/header.jpg?t=' + Math.floor(Date.now() / 86400000);
+    thumb.onerror = function () { window.__bannerError(thumb); };
+    thumb.src = srcs[0] + '?t=' + Math.floor(Date.now() / 86400000);
   }
 
   const fill = document.getElementById('fill');

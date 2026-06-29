@@ -823,6 +823,18 @@ def relative_time(epoch):
 # Quality-of-life client behaviors: count-up scoreboard numbers, a copy-link
 # button, and a "/" shortcut to focus the in-report search. Plain string (not an
 # f-string), injected as a value, so its braces and regex backslashes are safe.
+BANNER_JS = """<script>
+window.__bannerError = function (img) {
+  try {
+    var list = JSON.parse(img.getAttribute('data-srcs') || '[]');
+    var i = (parseInt(img.getAttribute('data-i'), 10) || 0) + 1;
+    if (i < list.length) { img.setAttribute('data-i', i); img.src = list[i]; }
+    else { img.style.display = 'none'; }
+  } catch (e) { img.style.display = 'none'; }
+};
+</script>"""
+
+
 QOL_JS = """<script>
 (function () {
   function countUp(el) {
@@ -936,11 +948,18 @@ def build_html(analysis: dict, title: str, refresh_state: dict = None) -> str:
     cache_ver = f"{int(analysis.get('cached_at') or 0)}.{CARD_VERSION}"
     share_url = (f"{SITE_URL}/analyze?appid={appid}&title={quote(title)}&v={cache_ver}"
                  if appid else "")
-    thumb_html = (
-        f'<img class="gamethumb" alt="" '
-        f'src="https://cdn.cloudflare.steamstatic.com/steam/apps/{esc(appid)}/header.jpg?t={date.today().toordinal()}" '
-        'onerror="this.style.display=\'none\'">'
-    ) if appid else ''
+    if appid:
+        _srcs = [
+            f"https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/{appid}/header.jpg",
+            f"https://cdn.cloudflare.steamstatic.com/steam/apps/{appid}/header.jpg",
+            f"https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/{appid}/capsule_616x353.jpg",
+        ]
+        thumb_html = (
+            f'<img class="gamethumb" alt="" data-srcs=\'{json.dumps(_srcs)}\' data-i="0" '
+            f'src="{_srcs[0]}?t={date.today().toordinal()}" onerror="__bannerError(this)">'
+        )
+    else:
+        thumb_html = ""
 
     # OpenGraph / Twitter card so shared links unfurl into a rich preview. Only
     # emitted on the web path (appid present); image is served by the /og route.
@@ -1005,6 +1024,7 @@ def build_html(analysis: dict, title: str, refresh_state: dict = None) -> str:
     toggle_js = TOGGLE_JS
     charts_js = CHARTS_JS
     qol_js = QOL_JS
+    banner_js = BANNER_JS
     chartjs_cdn = CHARTJS_CDN
 
     # Live review filters: ship the compact per-review array so the dashboard can
@@ -1031,6 +1051,7 @@ def build_html(analysis: dict, title: str, refresh_state: dict = None) -> str:
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2366c0f4' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><circle cx='11' cy='11' r='7'/><line x1='21' y1='21' x2='16.65' y2='16.65'/></svg>">
 <title>SteamSifter Report: {esc(title)}</title>
 {og_tags}
+{banner_js}
 <style>
   * {{ box-sizing: border-box; }}
   body {{ font-family: "Motiva Sans", -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; background: #1b2838; color: #c7d5e0; }}
