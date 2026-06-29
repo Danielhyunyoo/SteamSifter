@@ -195,6 +195,9 @@ HOME_PAGE = """<!DOCTYPE html>
   .bgjob { position: fixed; right: 18px; bottom: 18px; width: 280px; background: #16202d; border: 1px solid #2a475e; border-radius: 10px; padding: 14px 16px; box-shadow: 0 6px 24px rgba(0,0,0,0.4); z-index: 50; text-align: left; }
   .bgjob-label { color: #66c0f4; font-size: 11px; letter-spacing: 1px; text-transform: uppercase; }
   .bgjob-title { color: #fff; font-size: 15px; font-weight: 600; margin: 2px 0 8px; word-break: break-word; }
+  .bgjob-thumblink { display: block; margin-bottom: 8px; }
+  .bgjob-thumb { width: 100%; border-radius: 6px; display: none; }
+  .bgjob-meta { color: #66758a; font-size: 12px; margin-top: 6px; font-variant-numeric: tabular-nums; }
   .bgjob-track { background: #0e1620; border-radius: 6px; height: 8px; overflow: hidden; }
   .bgjob-fill { height: 100%; width: 0%; background: linear-gradient(90deg,#1a9fff,#66c0f4); transition: width .3s; }
   .bgjob-status { color: #8f98a0; font-size: 12px; margin-top: 8px; min-height: 16px; }
@@ -240,9 +243,11 @@ HOME_PAGE = """<!DOCTYPE html>
 
   <div id="bgJob" class="bgjob" style="display:none">
     <button id="bgJobDismiss" class="bgjob-x" title="Dismiss" aria-label="Dismiss">&times;</button>
+    <a id="bgJobLink" class="bgjob-thumblink" title="Back to the loading screen"><img id="bgJobThumb" class="bgjob-thumb" alt=""></a>
     <div class="bgjob-label">Analyzing</div>
     <div class="bgjob-title" id="bgJobTitle"></div>
     <div class="bgjob-track"><div class="bgjob-fill" id="bgJobFill"></div></div>
+    <div class="bgjob-meta"><span id="bgJobPct">0 / 1000</span> &middot; <span id="bgJobElapsed">0:00</span></div>
     <div class="bgjob-status" id="bgJobStatus">Starting...</div>
     <a class="bgjob-btn" id="bgJobView" style="display:none">View report &rarr;</a>
   </div>
@@ -301,27 +306,53 @@ HOME_PAGE = """<!DOCTYPE html>
     var fill = document.getElementById('bgJobFill');
     var status = document.getElementById('bgJobStatus');
     var view = document.getElementById('bgJobView');
+    var pctEl = document.getElementById('bgJobPct');
+    var elapsedEl = document.getElementById('bgJobElapsed');
+    var aid = encodeURIComponent(raw.appid);
+    var qs = 'appid=' + aid + '&title=' + encodeURIComponent(raw.title || '');
     document.getElementById('bgJobTitle').textContent = raw.title || 'your game';
-    view.href = '/analyze?appid=' + encodeURIComponent(raw.appid) + '&title=' + encodeURIComponent(raw.title || '');
+    view.href = '/analyze?' + qs;
+    // Banner, clickable back to the full loading screen (which re-attaches to the
+    // same running job); falls back across Steam asset hosts.
+    var link = document.getElementById('bgJobLink');
+    var thumb = document.getElementById('bgJobThumb');
+    link.href = '/analyzing?' + qs;
+    var srcs = [
+      'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/' + aid + '/header.jpg',
+      'https://cdn.cloudflare.steamstatic.com/steam/apps/' + aid + '/header.jpg',
+      'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/' + aid + '/capsule_616x353.jpg'
+    ];
+    var si = 0;
+    thumb.onload = function () { thumb.style.display = 'block'; };
+    thumb.onerror = function () { si++; if (si < srcs.length) thumb.src = srcs[si]; else thumb.style.display = 'none'; };
+    thumb.src = srcs[0];
     box.style.display = 'block';
     function setDisabled(d) {
       input.disabled = d;
       input.placeholder = d ? 'Analysis in progress, please wait...' : 'Search a game, e.g. Counter-Strike';
     }
     setDisabled(true);
+    var started = raw.started || Date.now();
+    var timer = setInterval(function () {
+      var s = Math.floor((Date.now() - started) / 1000);
+      elapsedEl.textContent = Math.floor(s / 60) + ':' + (s % 60 < 10 ? '0' : '') + (s % 60);
+    }, 1000);
     document.getElementById('bgJobDismiss').onclick = function () {
       try { localStorage.removeItem('ss_job'); } catch (e) {}
-      box.style.display = 'none'; setDisabled(false);
+      clearInterval(timer); box.style.display = 'none'; setDisabled(false);
     };
     function finish() {
-      setDisabled(false); fill.style.width = '100%';
+      clearInterval(timer); setDisabled(false);
+      fill.style.width = '100%'; pctEl.textContent = '1000 / 1000';
       status.textContent = 'Report ready'; view.style.display = 'inline-block';
     }
     function poll() {
       fetch('/progress?job=' + encodeURIComponent(raw.job))
         .then(function (r) { return r.json(); })
         .then(function (d) {
-          if (d.percent != null) fill.style.width = Math.min(100, d.percent) + '%';
+          var p = Math.min(100, d.percent || 0);
+          fill.style.width = p + '%';
+          pctEl.textContent = Math.floor(p * 10) + ' / 1000';
           if (d.message) status.textContent = d.message;
           if (d.done) { finish(); return; }
           setTimeout(poll, 1200);
@@ -511,6 +542,7 @@ ANALYZING_PAGE = """<!DOCTYPE html>
   .flavor { color: #66c0f4; font-size: 13px; min-height: 18px; margin-top: 12px;
            opacity: 0; transition: opacity .45s ease; }
   .elapsed { color: #66758a; font-size: 13px; margin-top: 10px; font-variant-numeric: tabular-nums; }
+  .leavehint { color: #5a6675; font-size: 12px; margin-top: 16px; max-width: 420px; margin-left: auto; margin-right: auto; line-height: 1.5; }
   .err { color: #e06c75; font-size: 14px; margin-top: 14px; }
   .gamethumb { width: 240px; max-width: 100%; height: auto; border-radius: 6px;
                border: 1px solid #2a475e; margin: 20px auto 18px; display: none; }
@@ -523,7 +555,7 @@ ANALYZING_PAGE = """<!DOCTYPE html>
 </head>
 <body>
   <div class="box">
-    <div class="brand">SteamSifter</div>
+    <a href="/" class="brand" style="text-decoration: none" onclick="window.__leaving = 1">SteamSifter</a>
     <img id="thumb" class="gamethumb" alt="">
     <h1 id="title">Analyzing...</h1>
     <div class="track"><div id="fill" class="fill"></div></div>
@@ -531,6 +563,7 @@ ANALYZING_PAGE = """<!DOCTYPE html>
     <div id="msg" class="msg">Starting...</div>
     <div id="flavor" class="flavor"></div>
     <div id="elapsed" class="elapsed">Elapsed 0:00</div>
+    <div class="leavehint">Safe to leave or close this tab — the analysis keeps running, and the report will be waiting when you come back.</div>
     <div id="err" class="err"></div>
   </div>
   <footer class="site-footer">
@@ -606,6 +639,12 @@ ANALYZING_PAGE = """<!DOCTYPE html>
   var shown = 0;      // smoothly animated value, so the counter never looks frozen
   var done = false;
   var hasError = false;
+
+  // Confirm before leaving/closing while still analyzing. The work continues in
+  // the background regardless; this just catches an accidental close.
+  window.addEventListener('beforeunload', function (e) {
+    if (!done && !hasError && !window.__leaving) { e.preventDefault(); e.returnValue = ''; }
+  });
 
   // Elapsed-time counter, so a long analysis always shows it is still working.
   var startTime = Date.now();
@@ -698,7 +737,7 @@ ANALYZING_PAGE = """<!DOCTYPE html>
   fetch(startUrl)
     .then(r => r.json())
     .then(d => { if (d.error) { showError(d.error); return; } jobId = d.job;
-      try { localStorage.setItem('ss_job', JSON.stringify({job: jobId, appid: appid, title: title})); } catch (e) {}
+      try { localStorage.setItem('ss_job', JSON.stringify({job: jobId, appid: appid, title: title, started: Date.now()})); } catch (e) {}
       poll(); })
     .catch(() => showError('Could not start analysis.'));
 
