@@ -360,6 +360,7 @@ def render_example(example: dict) -> str:
     Steam review (when we have the reviewer's permalink)."""
     text = esc(example.get("text", ""))
     hours = example.get("playtime_at_review_hours", 0)
+    played = "&lt;1 hr" if hours < 1 else f"{hours:g}h"   # avoid an ugly "0h"
     helpful = example.get("helpful_votes", 0)
     url = example.get("url")
     voted = example.get("voted_up")
@@ -407,7 +408,7 @@ def render_example(example: dict) -> str:
         f'{trans_html}'
         '<span class="badges">'
         f'{thumb}'
-        f'<span class="badge">{hours:g}h played</span>'
+        f'<span class="badge">{played} played</span>'
         f'<span class="badge">{helpful} helpful</span>'
         f'{source}'
         '</span>'
