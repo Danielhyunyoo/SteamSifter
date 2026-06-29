@@ -441,9 +441,9 @@ ANALYZING_PAGE = """<!DOCTYPE html>
 <style>
   * { box-sizing: border-box; }
   body { font-family: -apple-system, Segoe UI, Roboto, sans-serif; margin: 0;
-         background: linear-gradient(to bottom, #1b2838, #16202d) fixed; color: #c7d5e0; display: flex; min-height: 100vh;
-         align-items: center; justify-content: center; }
-  .box { width: 100%; max-width: 520px; padding: 24px; text-align: center; }
+         background: linear-gradient(to bottom, #1b2838, #16202d) fixed; color: #c7d5e0; display: flex;
+         flex-direction: column; min-height: 100vh; }
+  .box { width: 100%; max-width: 520px; padding: 24px; text-align: center; margin: auto; }
   .brand { color: #66c0f4; letter-spacing: 3px; text-transform: uppercase; font-size: 13px; }
   h1 { margin: 10px 0 24px; font-size: 24px; color: #fff; }
   .track { background: #16202d; border: 1px solid #2a475e; border-radius: 8px; height: 22px; overflow: hidden; }
@@ -456,6 +456,11 @@ ANALYZING_PAGE = """<!DOCTYPE html>
   .err { color: #e06c75; font-size: 14px; margin-top: 14px; }
   .gamethumb { width: 240px; max-width: 100%; height: auto; border-radius: 6px;
                border: 1px solid #2a475e; margin: 20px auto 18px; display: none; }
+  .site-footer { background: #171a21; border-top: 1px solid #0e1620; padding: 22px 24px; text-align: center; }
+  .footer-links { display: flex; gap: 18px; justify-content: center; flex-wrap: wrap; }
+  .footer-links a { color: #8f98a0; text-decoration: none; font-size: 13px; }
+  .footer-links a:hover { color: #66c0f4; }
+  .site-footer .disclaimer { margin: 12px auto 0; color: #5a6675; font-size: 11px; max-width: 640px; line-height: 1.5; }
 </style>
 </head>
 <body>
@@ -470,6 +475,15 @@ ANALYZING_PAGE = """<!DOCTYPE html>
     <div id="elapsed" class="elapsed">Elapsed 0:00</div>
     <div id="err" class="err"></div>
   </div>
+  <footer class="site-footer">
+    <div class="footer-links">
+      <a href="/about">About SteamSifter</a>
+      <a href="https://github.com/Danielhyunyoo/SteamSifter" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://steamcommunity.com/profiles/76561198990353371/" target="_blank" rel="noopener">Steam</a>
+      <a href="https://www.linkedin.com/in/danielhyunwooyoo/" target="_blank" rel="noopener">LinkedIn</a>
+    </div>
+    <div class="disclaimer">SteamSifter is an independent project and is not affiliated with, endorsed by, or sponsored by Valve or Steam. "Steam" is a trademark of Valve Corporation.</div>
+  </footer>
 <script>
   const params = new URLSearchParams(window.location.search);
   const appid = params.get('appid');

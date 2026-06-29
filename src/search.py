@@ -33,6 +33,7 @@ _ANCHOR_RE = re.compile(r'<a\b[^>]*?href="[^"]*?/app/(\d+)[^"]*"[^>]*>(.*?)</a>'
 _NAME_RE = re.compile(r'match_name[^>]*>([^<]+)<', re.I)
 _PRICE_TAIL_RE = re.compile(r'\s*(?:[$£€][\d.,]+|Free(?:\s*To\s*Play)?)\s*$', re.I)
 _TAG_RE = re.compile(r'<[^>]+>')
+_IMG_RE = re.compile(r'<img[^>]+src="([^"]+)"', re.I)
 
 
 def _parse_suggest(html: str, limit: int) -> list:
@@ -55,8 +56,9 @@ def _parse_suggest(html: str, limit: int) -> list:
         if not name:
             continue
         seen.add(appid)
-        results.append({"appid": int(appid), "name": name,
-                        "image": CAPSULE_URL.format(appid=appid)})
+        img = _IMG_RE.search(inner)            # real capsule from the suggest HTML
+        image = img.group(1) if img else CAPSULE_URL.format(appid=appid)
+        results.append({"appid": int(appid), "name": name, "image": image})
         if len(results) >= limit:
             break
     return results

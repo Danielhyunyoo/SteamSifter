@@ -279,6 +279,21 @@ FILTER_JS = """
       ranked.sort(function (a, b) { return b.imp - a.imp; });
       ranked.forEach(function (o, i) { cont.appendChild(o.c); var rk = o.c.querySelector('.rank'); if (rk) rk.textContent = '#' + (i + 1); });
       var uncl = cont.querySelector('.unclear'); if (uncl) cont.appendChild(uncl);
+
+      // Empty side: hide heading(s) and show a message instead of an orphaned
+      // "ranked by impact" header (e.g. a playtime/English filter leaves nothing).
+      var headings = Array.prototype.slice.call(cont.querySelectorAll('.section-heading'));
+      var emptyMsg = cont.querySelector('.filter-empty');
+      if (ranked.length === 0) {
+        headings.forEach(function (h) { h.style.display = 'none'; });
+        if (!emptyMsg) { emptyMsg = document.createElement('div'); emptyMsg.className = 'filter-empty'; cont.insertBefore(emptyMsg, cont.firstChild); }
+        var anyFilter = f.rec !== 'all' || f.pt > 0 || f.lang !== 'all';
+        emptyMsg.textContent = anyFilter ? 'No reviews match these filters.' : 'No themes surfaced on this side.';
+        emptyMsg.style.display = '';
+      } else {
+        headings.forEach(function (h) { h.style.display = ''; });
+        if (emptyMsg) emptyMsg.style.display = 'none';
+      }
     });
 
     // Noise note + filtered count
@@ -444,7 +459,7 @@ def render_theme_card(rank: int, theme: dict, max_impact: float) -> str:
 def _section(heading: str, items: list, max_impact: float) -> str:
     """A heading plus its ranked theme cards."""
     body = "".join(render_theme_card(i + 1, t, max_impact) for i, t in enumerate(items))
-    return f"<h2>{esc(heading)}</h2>{body}"
+    return f'<h2 class="section-heading">{esc(heading)}</h2>{body}'
 
 
 def render_side(records: list, mode: str) -> str:
@@ -1122,6 +1137,12 @@ def build_html(analysis: dict, title: str, refresh_state: dict = None) -> str:
   .filterbar label {{ color: #8f98a0; display: inline-flex; align-items: center; gap: 6px; }}
   .filterbar select {{ background: #0e1620; color: #c7d5e0; border: 1px solid #2a3a4d; border-radius: 4px; padding: 4px 6px; font-size: 12px; }}
   .filtered-count {{ margin-left: auto; color: #8f98a0; }}
+  .filter-empty {{ color: #8f98a0; font-size: 14px; padding: 8px 2px 4px; }}
+  .site-footer {{ background: #171a21; border-top: 1px solid #0e1620; padding: 22px 24px; text-align: center; margin-top: 48px; }}
+  .footer-links {{ display: flex; gap: 18px; justify-content: center; flex-wrap: wrap; }}
+  .footer-links a {{ color: #8f98a0; text-decoration: none; font-size: 13px; }}
+  .footer-links a:hover {{ color: #66c0f4; }}
+  .site-footer .disclaimer {{ margin: 12px auto 0; color: #5a6675; font-size: 11px; max-width: 640px; line-height: 1.5; }}
   .examples .example:nth-child(n+3) {{ display: none; }}
   @media (max-width: 640px) {{
     header {{ padding: 16px 18px; }}
@@ -1187,6 +1208,15 @@ def build_html(analysis: dict, title: str, refresh_state: dict = None) -> str:
     <h2>Low-signal reviews</h2>
     {noise_html}
   </main>
+  <footer class="site-footer">
+    <div class="footer-links">
+      <a href="/about">About SteamSifter</a>
+      <a href="https://github.com/Danielhyunyoo/SteamSifter" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://steamcommunity.com/profiles/76561198990353371/" target="_blank" rel="noopener">Steam</a>
+      <a href="https://www.linkedin.com/in/danielhyunwooyoo/" target="_blank" rel="noopener">LinkedIn</a>
+    </div>
+    <div class="disclaimer">SteamSifter is an independent project and is not affiliated with, endorsed by, or sponsored by Valve or Steam. "Steam" is a trademark of Valve Corporation.</div>
+  </footer>
   {chartdata_script}
   {filter_data_script}
   {nav_search}
