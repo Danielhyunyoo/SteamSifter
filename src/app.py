@@ -213,12 +213,14 @@ HOME_PAGE = """<!DOCTYPE html>
   .footer-links a:hover { color: #66c0f4; }
   .footer-links svg { width: 20px; height: 20px; fill: currentColor; display: block; }
   .disclaimer { margin: 12px auto 0; color: #5a6675; font-size: 11px; line-height: 1.5; max-width: 640px; }
-  .anns { display: flex; flex-direction: column; }
-  .ann { position: relative; background: #16202d; border-bottom: 1px solid #0e1620; border-left: 3px solid #66c0f4; padding: 12px 46px 12px 18px; text-align: left; }
+  .anns { position: fixed; top: 16px; right: 16px; width: 300px; max-width: calc(100vw - 32px); z-index: 40; display: flex; flex-direction: column; gap: 10px; }
+  .ann { position: relative; background: #16202d; border: 1px solid #2a475e; border-left: 3px solid #66c0f4; border-radius: 10px; padding: 13px 38px 13px 15px; box-shadow: 0 6px 24px rgba(0,0,0,0.4); text-align: left; transition: opacity .3s ease, transform .3s ease; }
+  .ann.dismissing { opacity: 0; transform: translateX(16px); pointer-events: none; }
   .ann-t { color: #fff; font-size: 14px; font-weight: 600; }
-  .ann-m { color: #8f98a0; font-size: 13px; margin-top: 2px; line-height: 1.5; }
-  .ann-x { position: absolute; top: 8px; right: 12px; background: none; border: none; color: #8f98a0; font-size: 20px; line-height: 1; cursor: pointer; }
+  .ann-m { color: #8f98a0; font-size: 13px; margin-top: 3px; line-height: 1.5; }
+  .ann-x { position: absolute; top: 8px; right: 10px; background: none; border: none; color: #8f98a0; font-size: 18px; line-height: 1; cursor: pointer; }
   .ann-x:hover { color: #c7d5e0; }
+  @media (max-width: 640px) { .anns { top: 10px; right: 10px; left: 10px; width: auto; } }
   @media (max-width: 640px) {
     h1 { font-size: 27px; }
     .hero { padding: 20px 16px; }
@@ -323,7 +325,7 @@ HOME_PAGE = """<!DOCTYPE html>
     if (seen.indexOf(id) === -1) seen.push(id);
     try { localStorage.setItem('ss_dismissed_anns', JSON.stringify(seen)); } catch (e) {}
     var el = document.querySelector('.ann[data-ann="' + id + '"]');
-    if (el) el.style.display = 'none';
+    if (el) { el.classList.add('dismissing'); setTimeout(function () { el.style.display = 'none'; }, 300); }
   }
 
   // Background-analysis widget: if a game is still analyzing (started before the
@@ -418,9 +420,15 @@ def _render_home():
     theme_style = ""
     theme = store.theme_active()
     if theme and _HEX_RE.match(theme.get("grad_top", "")) and _HEX_RE.match(theme.get("grad_bottom", "")):
-        theme_style = ("<style>body{background:linear-gradient(160deg,"
-                       + theme["grad_top"] + "," + theme["grad_bottom"]
-                       + ") fixed !important;}</style>")
+        theme_style = (
+            "<style>"
+            "body{background:linear-gradient(160deg," + theme["grad_top"] + "," + theme["grad_bottom"] + ") fixed !important;}"
+            # Footer fades in from transparent so the gradient bleeds through, no hard edge.
+            ".site-footer{background:linear-gradient(to bottom,rgba(14,22,32,0),rgba(14,22,32,0.92)) !important;border-top:none !important;}"
+            # Search box goes translucent so the gradient tints it instead of a stark block.
+            "input[type=text]{background:rgba(16,22,32,0.55) !important;}"
+            "</style>"
+        )
     return (HOME_PAGE
             .replace("{{ANNOUNCEMENTS}}", ann_html)
             .replace("{{THEME_STYLE}}", theme_style))
