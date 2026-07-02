@@ -600,6 +600,8 @@ ANALYZING_PAGE = """<!DOCTYPE html>
   body { font-family: -apple-system, Segoe UI, Roboto, sans-serif; margin: 0;
          background: linear-gradient(to bottom, #1b2838, #16202d) fixed; color: #c7d5e0; display: flex;
          flex-direction: column; min-height: 100vh; }
+  .bg-blur { position: fixed; top: -6%; left: -6%; width: 112%; height: 112%; z-index: -2; object-fit: cover; filter: blur(32px) saturate(1.08) brightness(0.6); opacity: 0; transition: opacity .8s ease; pointer-events: none; }
+  .bg-scrim { position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: -1; background: linear-gradient(to bottom, rgba(11,16,24,0.5), rgba(14,20,30,0.82)); pointer-events: none; }
   .box { width: 100%; max-width: 520px; padding: 24px; text-align: center; margin: auto; }
   .brand { color: #66c0f4; letter-spacing: 3px; text-transform: uppercase; font-size: 13px; }
   h1 { margin: 10px 0 24px; font-size: 24px; color: #fff; }
@@ -622,6 +624,8 @@ ANALYZING_PAGE = """<!DOCTYPE html>
 </style>
 </head>
 <body>
+  <img id="bgBlur" class="bg-blur" alt="">
+  <div class="bg-scrim"></div>
   <div class="box">
     <a href="/" class="brand" style="text-decoration: none" onclick="window.__leaving = 1">SteamSifter</a>
     <img id="thumb" class="gamethumb" alt="">
@@ -672,6 +676,15 @@ ANALYZING_PAGE = """<!DOCTYPE html>
     thumb.onload = function () { thumb.style.display = 'block'; };
     thumb.onerror = function () { window.__bannerError(thumb); };
     thumb.src = srcs[0] + '?t=' + Math.floor(Date.now() / 86400000);
+    // Same banner, blurred, as an ambient full-page background (like the share card).
+    var bg = document.getElementById('bgBlur');
+    if (bg) {
+      bg.setAttribute('data-srcs', JSON.stringify(srcs));
+      bg.setAttribute('data-i', '0');
+      bg.onload = function () { bg.style.opacity = '1'; };
+      bg.onerror = function () { window.__bannerError(bg); };
+      bg.src = srcs[0] + '?t=' + Math.floor(Date.now() / 86400000);
+    }
   }
 
   const fill = document.getElementById('fill');
