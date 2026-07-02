@@ -111,8 +111,8 @@ function animateBars(root) {
 function showSide(which) {
   var fix = document.getElementById('side-fix');
   var love = document.getElementById('side-love');
-  fix.style.display = (which === 'fix') ? 'block' : 'none';
-  love.style.display = (which === 'love') ? 'block' : 'none';
+  fix.style.display = (which === 'fix') ? '' : 'none';
+  love.style.display = (which === 'love') ? '' : 'none';
   document.getElementById('btn-fix').classList.toggle('active', which === 'fix');
   document.getElementById('btn-love').classList.toggle('active', which === 'love');
   var slider = document.getElementById('toggle-slider');
@@ -931,6 +931,18 @@ def build_html(analysis: dict, title: str, refresh_state: dict = None) -> str:
     fix_html = render_side(neg, "negative")
     love_html = render_side(pos, "positive")
 
+    # Two-column charts row: Overview (sentiment + donut) beside the sentiment
+    # trend. Falls back to a full-width Overview when the game has no timeline.
+    if trend_section:
+        charts_row = (
+            '<div class="charts-row">'
+            f'<section><h2>Overview</h2>{overview_html}</section>'
+            f'<section>{trend_section}</section>'
+            '</div>'
+        )
+    else:
+        charts_row = f'<h2>Overview</h2>{overview_html}'
+
     noise_html = ""
     if noise.get("count"):
         pct = round(noise["count"] / total_reviews * 100) if total_reviews else 0
@@ -1082,7 +1094,7 @@ def build_html(analysis: dict, title: str, refresh_state: dict = None) -> str:
   .navresult:hover {{ background: #1f3346; }}
   .navresult img {{ width: 46px; height: 18px; object-fit: cover; border-radius: 2px; background: #0e1620; }}
   .navresult span {{ font-size: 13px; color: #c7d5e0; }}
-  main {{ max-width: 880px; margin: 0 auto; padding: 28px 20px 60px; }}
+  main {{ width: 94%; max-width: 1600px; margin: 0 auto; padding: 28px 20px 60px; }}
   h2 {{ font-size: 18px; margin: 24px 0 12px; color: #fff; font-weight: 500; }}
   .toggle-bar {{ position: relative; display: inline-flex; background: #16202d; border: 1px solid #2a3a4d; border-radius: 4px; padding: 3px; margin: 8px 0 4px; }}
   .toggle-slider {{ position: absolute; top: 3px; bottom: 3px; left: 3px; width: calc(50% - 3px); border-radius: 3px; background: linear-gradient(to bottom, #1a9fff, #0a78c2); transition: transform .25s ease; z-index: 0; }}
@@ -1174,6 +1186,19 @@ def build_html(analysis: dict, title: str, refresh_state: dict = None) -> str:
   .footer-links a:hover {{ color: #66c0f4; }}
   .site-footer .disclaimer {{ margin: 12px auto 0; color: #5a6675; font-size: 11px; max-width: 640px; line-height: 1.5; }}
   .examples .example:nth-child(n+3) {{ display: none; }}
+  /* Two-column report layout on wide screens: charts row + theme card grid. */
+  .charts-row {{ display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: stretch; margin: 8px 0; }}
+  .charts-row > section {{ min-width: 0; display: flex; flex-direction: column; }}
+  .charts-row h2 {{ margin-top: 0; }}
+  .charts-row .overview {{ margin-bottom: 0; }}
+  .charts-row .trend-wrap {{ flex: 1 1 auto; height: auto; min-height: 340px; }}
+  .theme-cols {{ display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: start; }}
+  .theme-cols .section-heading, .theme-cols .unclear, .theme-cols .filter-empty, .theme-cols .empty {{ grid-column: 1 / -1; }}
+  .theme-cols .card {{ margin-bottom: 0; }}
+  @media (max-width: 820px) {{
+    /* Tablets and small windows: stack the two-column grids. */
+    .charts-row, .theme-cols {{ grid-template-columns: 1fr; }}
+  }}
   @media (max-width: 640px) {{
     header {{ padding: 16px 18px; }}
     .titlerow {{ flex-direction: column; align-items: stretch; gap: 12px; }}
@@ -1224,17 +1249,15 @@ def build_html(analysis: dict, title: str, refresh_state: dict = None) -> str:
   <main>
     {scoreboard_html}
     {filter_bar}
-    <h2>Overview</h2>
-    {overview_html}
-    {trend_section}
+    {charts_row}
     <div class="toggle-bar">
       <div class="toggle-slider" id="toggle-slider"></div>
       <button id="btn-fix" class="toggle-btn active" onclick="showSide('fix')">Issues</button>
       <button id="btn-love" class="toggle-btn" onclick="showSide('love')">Praise</button>
     </div>
     <div class="impact-help">Themes are ranked by <strong>impact</strong>: how many reviews raised each one, weighted by the reviewer's playtime and helpful votes. A few experienced, upvoted players outweigh many drive-by reviews. The bar and the High/Med/Low chip are relative to the top theme on each side.</div>
-    <div id="side-fix">{fix_html}</div>
-    <div id="side-love" style="display:none">{love_html}</div>
+    <div id="side-fix" class="theme-cols">{fix_html}</div>
+    <div id="side-love" class="theme-cols" style="display:none">{love_html}</div>
     <h2>Low-signal reviews</h2>
     {noise_html}
   </main>
