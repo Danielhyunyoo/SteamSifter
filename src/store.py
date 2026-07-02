@@ -161,7 +161,7 @@ def job_begin(appid):
                     return existing, False
                 r.set(f"active:{appid}", new_id, ex=JOB_TTL)   # claim vanished; take it
             r.hset(f"job:{new_id}", mapping={"percent": 0, "message": "Starting...",
-                                             "done": 0, "error": "", "appid": appid})
+                                             "done": 0, "error": "", "appid": appid, "started_at": time.time()})
             r.expire(f"job:{new_id}", JOB_TTL)
             return new_id, True
         except Exception as err:
@@ -172,7 +172,7 @@ def job_begin(appid):
         if existing and not _mem_jobs.get(existing, {}).get("done"):
             return existing, False
         _mem_jobs[new_id] = {"percent": 0, "message": "Starting...", "done": False,
-                             "error": None, "appid": appid}
+                             "error": None, "appid": appid, "started_at": time.time()}
         _mem_active[appid] = new_id
         return new_id, True
 
@@ -238,7 +238,8 @@ def job_get(job_id):
                 return {"percent": int(h.get("percent", 0)),
                         "message": h.get("message", ""),
                         "done": h.get("done") == "1",
-                        "error": h.get("error") or None}
+                        "error": h.get("error") or None,
+                        "started_at": float(h.get("started_at") or 0)}
             return None
         except Exception:
             pass

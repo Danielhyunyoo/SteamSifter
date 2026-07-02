@@ -350,6 +350,7 @@ HOME_PAGE = """<!DOCTYPE html>
       fetch('/progress?job=' + encodeURIComponent(raw.job))
         .then(function (r) { return r.json(); })
         .then(function (d) {
+          if (d.started_at) started = d.started_at * 1000;   // server clock wins
           var p = Math.min(100, d.percent || 0);
           fill.style.width = p + '%';
           pctEl.textContent = Math.floor(p * 10) + ' / 1000';
@@ -647,7 +648,13 @@ ANALYZING_PAGE = """<!DOCTYPE html>
   });
 
   // Elapsed-time counter, so a long analysis always shows it is still working.
+  // Seed from this game's stored start so switching pages does not reset it;
+  // the server clock (started_at from /progress) becomes authoritative below.
   var startTime = Date.now();
+  try {
+    var _prevJob = JSON.parse(localStorage.getItem('ss_job') || 'null');
+    if (_prevJob && _prevJob.started && _prevJob.appid === appid) startTime = _prevJob.started;
+  } catch (e) {}
   var elapsedEl = document.getElementById('elapsed');
   var elapsedTimer = setInterval(function () {
     var s = Math.floor((Date.now() - startTime) / 1000);
@@ -737,7 +744,11 @@ ANALYZING_PAGE = """<!DOCTYPE html>
   fetch(startUrl)
     .then(r => r.json())
     .then(d => { if (d.error) { showError(d.error); return; } jobId = d.job;
-      try { localStorage.setItem('ss_job', JSON.stringify({job: jobId, appid: appid, title: title, started: Date.now()})); } catch (e) {}
+      try {
+        var _existing = JSON.parse(localStorage.getItem('ss_job') || 'null');
+        var _startedAt = (_existing && _existing.job === jobId && _existing.started) ? _existing.started : Date.now();
+        localStorage.setItem('ss_job', JSON.stringify({job: jobId, appid: appid, title: title, started: _startedAt}));
+      } catch (e) {}
       poll(); })
     .catch(() => showError('Could not start analysis.'));
 
@@ -746,6 +757,7 @@ ANALYZING_PAGE = """<!DOCTYPE html>
       .then(r => r.json())
       .then(d => {
         if (d.error) { showError(d.error); return; }
+        if (d.started_at) startTime = d.started_at * 1000;   // server clock wins
         target = d.percent || 0;
         if (d.message) msg.textContent = d.message;
         if (d.done) {

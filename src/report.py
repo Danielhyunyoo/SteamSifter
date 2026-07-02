@@ -1192,12 +1192,13 @@ def build_html(analysis: dict, title: str, refresh_state: dict = None) -> str:
   .charts-row h2 {{ margin-top: 0; }}
   .charts-row .overview {{ margin-bottom: 0; }}
   .charts-row .trend-wrap {{ flex: 1 1 auto; height: auto; min-height: 340px; }}
-  .theme-cols {{ display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: start; }}
-  .theme-cols .section-heading, .theme-cols .unclear, .theme-cols .filter-empty, .theme-cols .empty {{ grid-column: 1 / -1; }}
-  .theme-cols .card {{ margin-bottom: 0; }}
+  .theme-cols {{ column-count: 2; column-gap: 12px; }}
+  .theme-cols .section-heading, .theme-cols .unclear, .theme-cols .filter-empty, .theme-cols .empty {{ column-span: all; }}
+  .theme-cols .card {{ margin: 0 0 12px; break-inside: avoid; -webkit-column-break-inside: avoid; }}
   @media (max-width: 820px) {{
-    /* Tablets and small windows: stack the two-column grids. */
-    .charts-row, .theme-cols {{ grid-template-columns: 1fr; }}
+    /* Tablets and small windows: stack the two-column layouts. */
+    .charts-row {{ grid-template-columns: 1fr; }}
+    .theme-cols {{ column-count: 1; }}
   }}
   @media (max-width: 640px) {{
     header {{ padding: 16px 18px; }}
@@ -1229,7 +1230,7 @@ def build_html(analysis: dict, title: str, refresh_state: dict = None) -> str:
     main {{ max-width: 100%; padding: 10px 0; }}
     h2 {{ color: #111111 !important; break-after: avoid; }}
     .navsearch, .refresh, .printbtn, .donut-hint, .trend-tip, .toggle-bar, .filterbar {{ display: none !important; }}
-    #side-fix, #side-love {{ display: block !important; }}
+    #side-fix, #side-love {{ display: block !important; column-count: 1 !important; }}
     .overview, .card, .trend-wrap, .stat {{ background: #ffffff !important; border: 1px solid #d0d7de !important; box-shadow: none !important; break-inside: avoid; }}
     .example {{ break-inside: avoid; border-left-color: #d0d7de !important; }}
     .meta, .count, .legend, .legend-item, .ov-note, .ov-sub, .trend-sub, .impact-help, .aname, .translation, .cat-label, .cat-num, .cat-count, .stat-label {{ color: #555f6a !important; }}
