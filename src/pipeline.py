@@ -19,13 +19,14 @@ Examples:
 import argparse
 import json
 import os
+import re
 import time
 
 from llm import get_client, generate_json
 from pydantic import BaseModel
 from fetch_reviews import (fetch_reviews, fetch_reviews_balanced, save_reviews,
                            fetch_review_total, fetch_player_summaries, fetch_game_context)
-from classify_batch import classify_all, save_classified
+from classify_batch import classify_all, hybrid_classify_all, save_classified
 from themes import analyze_both
 from report import build_html
 import store
@@ -79,23 +80,50 @@ class _Translation(BaseModel):
     english: str
 
 
-def _translate_batch(client, batch) -> None:
-    """
-    Translate any NON-English quote in one batch, in place.
+# Letters from scripts that are unmistakably not English (Greek, Cyrillic, Hebrew,
+# Arabic, Devanagari, Thai, Kana, CJK, Hangul). Used as a safety net so a foreign
+# quote is never left untranslated if the detect-and-translate pass skips it.
+_NON_LATIN_RE = re.compile(
+    "[\u0370-\u03ff\u0400-\u04ff\u0590-\u05ff\u0600-\u06ff\u0900-\u097f"
+    "\u0e00-\u0e7f\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]"
+)
 
-    The model detects the language itself. We do NOT rely on Steam's language
-    tag, which is the reviewer's client locale, not what they actually wrote (a
-    Turkish review from an English client is tagged "english"), nor on a character
-    heuristic, which misses Latin-script languages. English quotes are left as-is.
+
+def _looks_non_latin(text: str) -> bool:
+    """True if the text clearly contains non-Latin-script letters (e.g. CJK)."""
+    return len(_NON_LATIN_RE.findall(text or "")) >= 2
+
+
+def _translate_batch(client, batch, force: bool = False) -> None:
     """
-    numbered = "\n".join(f"{i}: {ex.get('text', '')[:300]}" for i, ex in enumerate(batch))
-    prompt = (
-        "Below are numbered Steam game reviews. Some are written in English and "
-        "some are not. For EVERY review that is NOT written in English, return its "
-        "index and a natural, concise English translation. Do NOT return anything "
-        "for reviews that are already in English.\n\n"
-        f"{numbered}"
+    Translate non-English quotes in one batch, in place.
+
+    The model detects the language itself (we do NOT trust Steam's language tag,
+    which is the reviewer's client locale, not what they wrote). Each review is
+    flattened to a SINGLE line so newlines inside a review cannot break the numbered
+    list and misalign the model's answers. With force=True every quote is translated
+    unconditionally, used to sweep up anything the detection pass missed.
+    """
+    # One line per review: collapse internal whitespace so each "index: text" stays
+    # on its own line for the model to parse reliably.
+    numbered = "\n".join(
+        f"{i}: {' '.join((ex.get('text', '') or '').split())[:300]}"
+        for i, ex in enumerate(batch)
     )
+    if force:
+        prompt = (
+            "Below are numbered non-English Steam game reviews. For EVERY index, "
+            "return its index and a natural, concise English translation.\n\n"
+            f"{numbered}"
+        )
+    else:
+        prompt = (
+            "Below are numbered Steam game reviews. Some are written in English and "
+            "some are not. For EVERY review that is NOT written in English, return "
+            "its index and a natural, concise English translation. Do NOT return "
+            "anything for reviews that are already in English.\n\n"
+            f"{numbered}"
+        )
     try:
         results = generate_json(client, prompt, list[_Translation]) or []
     except Exception as err:
@@ -104,18 +132,21 @@ def _translate_batch(client, batch) -> None:
     by_index = {r.index: r.english for r in results}
     for i, ex in enumerate(batch):
         english = (by_index.get(i) or "").strip()
-        original = (ex.get("text", "") or "")[:300].strip()
+        original = " ".join((ex.get("text", "") or "").split())[:300].strip()
         # Store only genuine translations (skip blanks and English echoed back).
         if english and english.lower() != original.lower():
             ex["translation"] = english
+            ex["en"] = 0   # a translated quote is, by definition, not English
 
 
 def _attach_translations(analysis: dict, client) -> None:
     """
     Add an English 'translation' to every non-English example quote.
 
-    Quotes go to the model in batches and IT decides what is foreign, so anything
-    non-English is caught regardless of script or the unreliable Steam tag.
+    A first pass lets the model detect and translate foreign quotes (any script,
+    ignoring the unreliable Steam tag). A second pass then force-translates any
+    clearly non-Latin quote (CJK, Hangul, Cyrillic, etc.) the first pass skipped,
+    so foreign reviews are never left untranslated.
     """
     examples = []
     for rec in analysis.get("negative", []) + analysis.get("positive", []):
@@ -124,8 +155,16 @@ def _attach_translations(analysis: dict, client) -> None:
         examples.extend(rec.get("examples", []))
     if not examples:
         return
-    for start in range(0, len(examples), 40):
-        _translate_batch(client, examples[start:start + 40])
+
+    BATCH = 20   # smaller batches: the model omits fewer entries per call
+    for start in range(0, len(examples), BATCH):
+        _translate_batch(client, examples[start:start + BATCH])
+
+    # Safety net: force-translate obvious non-Latin quotes the first pass missed.
+    missed = [ex for ex in examples
+              if not ex.get("translation") and _looks_non_latin(ex.get("text", ""))]
+    for start in range(0, len(missed), BATCH):
+        _translate_batch(client, missed[start:start + BATCH], force=True)
 
 
 def _attach_authors(analysis: dict) -> None:
@@ -186,7 +225,7 @@ def get_analysis(app_id: str, max_reviews: int = DEFAULT_MAX_REVIEWS, refresh: b
     # friendly" on a gore game) given what the game actually is.
     game_context = fetch_game_context(app_id)
 
-    classified = classify_all(
+    classified = hybrid_classify_all(
         client, reviews,
         on_progress=lambda f: report(10 + int(f * 45), "Classifying reviews"),
         context=game_context,
@@ -203,7 +242,7 @@ def get_analysis(app_id: str, max_reviews: int = DEFAULT_MAX_REVIEWS, refresh: b
     # of a fast local classifier. Best-effort; never blocks the analysis.
     try:
         import training_data
-        training_data.log_samples(classified)
+        training_data.log_samples([r for r in classified if r.get("_llm_labeled")])
     except Exception as err:
         print(f"Training-data logging skipped ({err}).")
 
