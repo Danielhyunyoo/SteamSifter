@@ -16,6 +16,7 @@ Then open http://127.0.0.1:5000 in your browser.
 import html
 import math
 import os
+import re
 import threading
 import time
 import uuid
@@ -31,6 +32,10 @@ from pipeline import get_analysis, DEFAULT_MAX_AGE_DAYS
 from fetch_reviews import fetch_review_total
 from report import build_html
 import store
+
+# Hex validator for the admin-set seasonal gradient (guards against a crafted
+# POST injecting arbitrary CSS into the home page).
+_HEX_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 
 
 app = Flask(__name__)
@@ -208,6 +213,12 @@ HOME_PAGE = """<!DOCTYPE html>
   .footer-links a:hover { color: #66c0f4; }
   .footer-links svg { width: 20px; height: 20px; fill: currentColor; display: block; }
   .disclaimer { margin: 12px auto 0; color: #5a6675; font-size: 11px; line-height: 1.5; max-width: 640px; }
+  .anns { display: flex; flex-direction: column; }
+  .ann { position: relative; background: #16202d; border-bottom: 1px solid #0e1620; border-left: 3px solid #66c0f4; padding: 12px 46px 12px 18px; text-align: left; }
+  .ann-t { color: #fff; font-size: 14px; font-weight: 600; }
+  .ann-m { color: #8f98a0; font-size: 13px; margin-top: 2px; line-height: 1.5; }
+  .ann-x { position: absolute; top: 8px; right: 12px; background: none; border: none; color: #8f98a0; font-size: 20px; line-height: 1; cursor: pointer; }
+  .ann-x:hover { color: #c7d5e0; }
   @media (max-width: 640px) {
     h1 { font-size: 27px; }
     .hero { padding: 20px 16px; }
@@ -216,8 +227,10 @@ HOME_PAGE = """<!DOCTYPE html>
     .footer-links { gap: 14px; }
   }
 </style>
+{{THEME_STYLE}}
 </head>
 <body>
+  {{ANNOUNCEMENTS}}
   <div class="hero">
     <div class="hero-inner">
       <div class="brand">SteamSifter</div>
@@ -295,6 +308,24 @@ HOME_PAGE = """<!DOCTYPE html>
     window.location = '/analyzing?appid=' + appid + '&title=' + encodeURIComponent(name);
   }
 
+  // Home-page announcements: hide any the visitor already dismissed (kept in
+  // their browser), and let them dismiss the rest.
+  (function () {
+    var seen = [];
+    try { seen = JSON.parse(localStorage.getItem('ss_dismissed_anns') || '[]'); } catch (e) {}
+    document.querySelectorAll('.ann').forEach(function (el) {
+      if (seen.indexOf(el.getAttribute('data-ann')) !== -1) el.style.display = 'none';
+    });
+  })();
+  function dismissAnn(id) {
+    var seen = [];
+    try { seen = JSON.parse(localStorage.getItem('ss_dismissed_anns') || '[]'); } catch (e) {}
+    if (seen.indexOf(id) === -1) seen.push(id);
+    try { localStorage.setItem('ss_dismissed_anns', JSON.stringify(seen)); } catch (e) {}
+    var el = document.querySelector('.ann[data-ann="' + id + '"]');
+    if (el) el.style.display = 'none';
+  }
+
   // Background-analysis widget: if a game is still analyzing (started before the
   // user returned to the home page), show its progress, disable search until it
   // finishes, then offer a button to open the finished report.
@@ -367,10 +398,38 @@ HOME_PAGE = """<!DOCTYPE html>
 </html>"""
 
 
+def _render_home():
+    """Home HTML with active announcements + seasonal gradient injected."""
+    ann_html = ""
+    anns = store.announcements_active()
+    if anns:
+        rows = ""
+        for a in anns:
+            aid = html.escape(a.get("id", ""))
+            rows += (
+                f'<div class="ann" data-ann="{aid}">'
+                f'<button class="ann-x" onclick="dismissAnn(&#39;{aid}&#39;)" '
+                'title="Dismiss" aria-label="Dismiss">&times;</button>'
+                f'<div class="ann-t">{html.escape(a.get("title", ""))}</div>'
+                f'<div class="ann-m">{html.escape(a.get("message", ""))}</div>'
+                '</div>'
+            )
+        ann_html = f'<div class="anns">{rows}</div>'
+    theme_style = ""
+    theme = store.theme_active()
+    if theme and _HEX_RE.match(theme.get("grad_top", "")) and _HEX_RE.match(theme.get("grad_bottom", "")):
+        theme_style = ("<style>body{background:linear-gradient(160deg,"
+                       + theme["grad_top"] + "," + theme["grad_bottom"]
+                       + ") fixed !important;}</style>")
+    return (HOME_PAGE
+            .replace("{{ANNOUNCEMENTS}}", ann_html)
+            .replace("{{THEME_STYLE}}", theme_style))
+
+
 @app.route("/")
 def home():
-    """Serve the search home page."""
-    return HOME_PAGE
+    """Serve the search home page (with active announcements + theme)."""
+    return Response(_render_home(), mimetype="text/html")
 
 
 @app.route("/api/search")
@@ -968,6 +1027,20 @@ ADMIN_PAGE = """<!DOCTYPE html>
   .btn:hover { background: #1f3346; color: #8fd0fb; }
   .btn.ghost { color: #8f98a0; }
   .msg { color: #8f98a0; font-size: 13px; margin-bottom: 14px; }
+  body:has(#adminManage) { align-items: flex-start; padding: 40px 16px; }
+  body:has(#adminManage) .box { max-width: 620px; text-align: left; }
+  #adminManage h2 { font-size: 15px; color: #fff; margin: 24px 0 10px; border-top: 1px solid #223142; padding-top: 18px; }
+  #adminManage label { display: block; font-size: 12px; color: #8f98a0; margin: 10px 0 4px; }
+  #adminManage input[type=text], #adminManage textarea, #adminManage select { width: 100%; padding: 9px 11px; font-size: 14px; border-radius: 6px; border: 1px solid #2a475e; background: #16202d; color: #fff; margin: 0; }
+  #adminManage textarea { resize: vertical; min-height: 60px; }
+  #adminManage input[type=color] { width: 46px; height: 34px; padding: 2px; border: 1px solid #2a475e; border-radius: 6px; background: #16202d; vertical-align: middle; }
+  #adminManage .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  #adminManage .ann-item { background: #16202d; border: 1px solid #2a475e; border-radius: 6px; padding: 10px 12px; margin-top: 8px; }
+  #adminManage .ann-item .t { color: #fff; font-size: 13px; font-weight: 600; }
+  #adminManage .ann-item .m { color: #8f98a0; font-size: 12px; margin: 2px 0 6px; }
+  #adminManage .exp { color: #66758a; font-size: 11px; }
+  #adminManage .mini { padding: 5px 10px; font-size: 12px; }
+  #adminManage .swatch { display: inline-block; width: 16px; height: 16px; border-radius: 3px; vertical-align: middle; border: 1px solid #2a475e; }
 </style>
 </head>
 <body>
@@ -980,22 +1053,114 @@ ADMIN_PAGE = """<!DOCTYPE html>
 </html>"""
 
 
+def _relative_expiry(ts):
+    """A short human label for when something expires (e.g. "expires in 5 d")."""
+    if not ts:
+        return "no expiry"
+    secs = int(ts - time.time())
+    if secs <= 0:
+        return "expired"
+    if secs < 3600:
+        return f"expires in {secs // 60} min"
+    if secs < 86400:
+        return f"expires in {secs // 3600} h"
+    return f"expires in {secs // 86400} d"
+
+
+# Duration menus (seconds). 0 on the theme menu means "until I remove it".
+_ANN_DURATIONS = [(3600, "1 hour"), (86400, "1 day"), (259200, "3 days"),
+                  (604800, "1 week"), (1209600, "2 weeks"), (2592000, "1 month")]
+_THEME_DURATIONS = [(604800, "1 week"), (1209600, "2 weeks"),
+                    (2592000, "1 month"), (0, "Until I remove it")]
+
+
+def _duration_options(pairs, default):
+    """Build <option> tags for a duration <select>."""
+    out = ""
+    for secs, label in pairs:
+        sel = " selected" if secs == default else ""
+        out += f'<option value="{secs}"{sel}>{label}</option>'
+    return out
+
+
 def _admin_page(message, signed_in=False):
-    """Render the admin page with a message and either a form or sign-out."""
+    """Render the admin page with a message and either a form or the owner tools."""
     note = f'<div class="msg">{message}</div>' if message else ''
-    if signed_in:
-        import training_data
-        body = (note +
-                f'<div class="msg">Training samples collected: {training_data.count():,}</div>'
-                '<a class="btn" href="/admin/training.jsonl">Download training data</a> '
-                '<a class="btn" href="/admin/logout">Sign out</a> '
-                '<a class="btn ghost" href="/">Back to site</a>')
-    else:
+    if not signed_in:
         body = (note +
                 '<form method="post">'
                 '<input type="password" name="password" placeholder="Owner password" autofocus>'
                 '<button class="btn" type="submit">Sign in</button>'
                 '</form>')
+        return Response(ADMIN_PAGE.replace("{{BODY}}", body), mimetype="text/html")
+
+    import training_data
+
+    # Active announcements, each with a delete button.
+    ann_rows = ""
+    for a in store.announcements_active():
+        ann_rows += (
+            '<div class="ann-item">'
+            f'<div class="t">{html.escape(a.get("title", ""))}</div>'
+            f'<div class="m">{html.escape(a.get("message", ""))}</div>'
+            '<div class="row">'
+            f'<span class="exp">{_relative_expiry(a.get("expires_at"))}</span>'
+            '<form method="post" action="/admin/announce/delete" style="margin:0">'
+            f'<input type="hidden" name="id" value="{html.escape(a.get("id", ""))}">'
+            '<button class="btn ghost mini" type="submit">Delete</button></form>'
+            '</div></div>'
+        )
+    if not ann_rows:
+        ann_rows = '<div class="msg">No active announcements.</div>'
+
+    # Current seasonal theme status.
+    theme = store.theme_active()
+    if theme:
+        theme_status = (
+            '<div class="ann-item"><div class="row">'
+            f'<span class="swatch" style="background:{html.escape(theme.get("grad_top", ""))}"></span>'
+            f'<span class="swatch" style="background:{html.escape(theme.get("grad_bottom", ""))}"></span>'
+            f'<span class="exp">Active &middot; {_relative_expiry(theme.get("expires_at"))}</span>'
+            '<form method="post" action="/admin/theme/clear" style="margin:0">'
+            '<button class="btn ghost mini" type="submit">Remove theme</button></form>'
+            '</div></div>'
+        )
+    else:
+        theme_status = '<div class="msg">No seasonal theme active.</div>'
+
+    body = (
+        '<div id="adminManage">'
+        + note
+        + f'<div class="msg">Training samples collected: {training_data.count():,}</div>'
+        '<a class="btn" href="/admin/training.jsonl">Download training data</a> '
+        '<a class="btn" href="/admin/logout">Sign out</a> '
+        '<a class="btn ghost" href="/">Back to site</a>'
+
+        '<h2>Home-page announcements</h2>'
+        + ann_rows +
+        '<form method="post" action="/admin/announce">'
+        '<label>Title</label>'
+        '<input type="text" name="title" maxlength="120" required>'
+        '<label>Message</label>'
+        '<textarea name="message" maxlength="600" required></textarea>'
+        '<label>Show for</label>'
+        '<select name="duration">' + _duration_options(_ANN_DURATIONS, 86400) + '</select>'
+        '<div style="margin-top:12px"><button class="btn" type="submit">Post announcement</button></div>'
+        '</form>'
+
+        '<h2>Seasonal background gradient</h2>'
+        + theme_status +
+        '<form method="post" action="/admin/theme">'
+        '<div class="row">'
+        '<label style="margin:0">Top</label><input type="color" name="grad_top" value="#0f2c4a">'
+        '<label style="margin:0">Bottom</label><input type="color" name="grad_bottom" value="#a85c3e">'
+        '</div>'
+        '<label>Duration</label>'
+        '<select name="duration">' + _duration_options(_THEME_DURATIONS, 1209600) + '</select>'
+        '<div style="margin-top:12px"><button class="btn" type="submit">Apply theme</button></div>'
+        '</form>'
+        '</div>'
+    )
     return Response(ADMIN_PAGE.replace("{{BODY}}", body), mimetype="text/html")
 
 
@@ -1021,6 +1186,56 @@ def admin_logout():
     """Clear the admin session."""
     session.pop("admin", None)
     return redirect("/")
+
+
+@app.route("/admin/announce", methods=["POST"])
+def admin_announce():
+    """Owner: post a home-page announcement."""
+    if not is_admin():
+        return redirect("/admin")
+    title = (request.form.get("title") or "").strip()[:120]
+    message = (request.form.get("message") or "").strip()[:600]
+    try:
+        ttl = int(request.form.get("duration") or "86400")
+    except ValueError:
+        ttl = 86400
+    if title and message:
+        store.announcement_add(title, message, ttl)
+    return redirect("/admin")
+
+
+@app.route("/admin/announce/delete", methods=["POST"])
+def admin_announce_delete():
+    """Owner: remove one announcement by id."""
+    if not is_admin():
+        return redirect("/admin")
+    store.announcement_delete((request.form.get("id") or "").strip())
+    return redirect("/admin")
+
+
+@app.route("/admin/theme", methods=["POST"])
+def admin_theme():
+    """Owner: set the seasonal background gradient (validated hex colors)."""
+    if not is_admin():
+        return redirect("/admin")
+    top = (request.form.get("grad_top") or "").strip()
+    bottom = (request.form.get("grad_bottom") or "").strip()
+    try:
+        ttl = int(request.form.get("duration") or "0")
+    except ValueError:
+        ttl = 0
+    if _HEX_RE.match(top) and _HEX_RE.match(bottom):
+        store.theme_set(top, bottom, ttl or None)
+    return redirect("/admin")
+
+
+@app.route("/admin/theme/clear", methods=["POST"])
+def admin_theme_clear():
+    """Owner: turn the seasonal theme off."""
+    if not is_admin():
+        return redirect("/admin")
+    store.theme_clear()
+    return redirect("/admin")
 
 
 @app.route("/admin/training.jsonl")

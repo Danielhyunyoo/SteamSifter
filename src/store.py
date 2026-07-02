@@ -246,3 +246,114 @@ def job_get(job_id):
     with _mem_lock:
         j = _mem_jobs.get(job_id)
         return dict(j) if j else None
+
+
+# ----------------------------------------------------------------------------
+# Site config: owner-managed home-page announcements and a seasonal gradient
+# theme. Stored as one small JSON blob (Redis when configured, else a local file
+# for dev). Expired announcements and an expired theme are pruned lazily on read.
+# ----------------------------------------------------------------------------
+
+SITE_CONFIG_KEY = "site:config"
+SITE_CONFIG_FILE = os.path.join(DATA_DIR, "site_config.json")
+
+
+def _site_load():
+    """Load the whole site-config blob: {"announcements": [...], "theme": {...}|None}."""
+    r = _redis_client()
+    if r is not None:
+        try:
+            raw = r.get(SITE_CONFIG_KEY)
+            return json.loads(raw) if raw else {"announcements": [], "theme": None}
+        except Exception as err:
+            print(f"Site-config Redis read failed ({err}); using local file.")
+    try:
+        with open(SITE_CONFIG_FILE, encoding="utf-8") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return {"announcements": [], "theme": None}
+
+
+def _site_save(cfg):
+    """Persist the whole site-config blob (Redis with no TTL, else a local file)."""
+    payload = json.dumps(cfg, ensure_ascii=False)
+    r = _redis_client()
+    if r is not None:
+        try:
+            r.set(SITE_CONFIG_KEY, payload)   # persists until changed (no TTL)
+            return
+        except Exception as err:
+            print(f"Site-config Redis write failed ({err}); using local file.")
+    os.makedirs(DATA_DIR, exist_ok=True)
+    with open(SITE_CONFIG_FILE, "w", encoding="utf-8") as f:
+        f.write(payload)
+
+
+def _site_prune(cfg):
+    """Drop expired announcements and an expired theme. Returns True if changed."""
+    now = time.time()
+    anns = cfg.get("announcements") or []
+    kept = [a for a in anns if not a.get("expires_at") or a["expires_at"] > now]
+    changed = len(kept) != len(anns)
+    cfg["announcements"] = kept
+    theme = cfg.get("theme")
+    if theme and theme.get("expires_at") and theme["expires_at"] <= now:
+        cfg["theme"] = None
+        changed = True
+    return changed
+
+
+def announcements_active():
+    """Active (non-expired) announcements, newest first."""
+    cfg = _site_load()
+    if _site_prune(cfg):
+        _site_save(cfg)
+    return sorted(cfg.get("announcements") or [],
+                  key=lambda a: a.get("created_at", 0), reverse=True)
+
+
+def announcement_add(title, message, ttl_seconds):
+    """Add an announcement that expires after ttl_seconds (0/None = no expiry)."""
+    cfg = _site_load()
+    _site_prune(cfg)
+    now = time.time()
+    cfg.setdefault("announcements", []).append({
+        "id": uuid.uuid4().hex[:8], "title": title, "message": message,
+        "created_at": now,
+        "expires_at": (now + ttl_seconds) if ttl_seconds else None,
+    })
+    _site_save(cfg)
+
+
+def announcement_delete(ann_id):
+    """Remove one announcement by id."""
+    cfg = _site_load()
+    cfg["announcements"] = [a for a in (cfg.get("announcements") or [])
+                            if a.get("id") != ann_id]
+    _site_prune(cfg)
+    _site_save(cfg)
+
+
+def theme_active():
+    """The active seasonal gradient theme dict, or None if unset/expired."""
+    cfg = _site_load()
+    if _site_prune(cfg):
+        _site_save(cfg)
+    return cfg.get("theme")
+
+
+def theme_set(grad_top, grad_bottom, ttl_seconds=None):
+    """Set the seasonal gradient. ttl_seconds falsy = stays until removed."""
+    cfg = _site_load()
+    now = time.time()
+    cfg["theme"] = {"grad_top": grad_top, "grad_bottom": grad_bottom,
+                    "set_at": now,
+                    "expires_at": (now + ttl_seconds) if ttl_seconds else None}
+    _site_save(cfg)
+
+
+def theme_clear():
+    """Turn the seasonal theme off."""
+    cfg = _site_load()
+    cfg["theme"] = None
+    _site_save(cfg)
