@@ -252,7 +252,10 @@ def theme_group_embed(client, reviews):
     if not reviews:
         return []
 
-    vectors = embed_texts([r.get("text", "") for r in reviews])
+    if reviews and all("_embedding" in r for r in reviews):
+        vectors = [r["_embedding"] for r in reviews]   # reuse the classifier embeddings
+    else:
+        vectors = embed_texts([r.get("text", "") for r in reviews])
     labels = cluster_vectors(vectors)
     labels = merge_similar_clusters(vectors, labels)   # collapse duplicate themes
 

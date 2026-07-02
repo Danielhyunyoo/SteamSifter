@@ -32,7 +32,7 @@ from classify import ReviewCategory
 # Tuning knobs
 # ----------------------------------------------------------------------------
 
-BATCH_SIZE = 25                 # reviews per API call; smaller batches return
+BATCH_SIZE = 40                 # reviews per API call; smaller batches return
                                 # faster and overlap better when run concurrently
 MAX_WORKERS = int(os.environ.get("LLM_MAX_WORKERS", "8"))
                                 # how many batch calls run at once. Paid OpenAI
@@ -194,6 +194,52 @@ def classify_all(client, reviews: list, on_progress=None, context: str = "") -> 
     return reviews
 
 
+def hybrid_classify_all(client, reviews: list, on_progress=None, context: str = "") -> list:
+    """
+    Classify with the distilled local models where confident, LLM otherwise.
+
+    Every review is embedded once here and the vector stashed on it (r["_embedding"])
+    so the theming step can reuse it. Confident reviews are labeled locally (no API
+    call); the rest fall back to the batched LLM classifier. Only LLM-labeled
+    reviews should be logged for future retraining (see pipeline).
+    """
+    if not reviews:
+        return reviews
+    from cluster_themes import embed_texts
+    import local_classify
+
+    embs = embed_texts([r.get("text", "") for r in reviews])
+    for r, e in zip(reviews, embs):
+        r["_embedding"] = e
+    if on_progress:
+        on_progress(0.3)
+
+    uncertain = reviews
+    if local_classify.available():
+        preds = local_classify.classify(embs)
+        uncertain = []
+        for r, p in zip(reviews, preds or []):
+            if p and p["confident"]:
+                r["sentiment"] = p["sentiment"]
+                r["category"] = p["category"]
+                r["is_constructive"] = p["is_constructive"]
+                r["_llm_labeled"] = False
+            else:
+                uncertain.append(r)
+        print(f"Local-classified {len(reviews) - len(uncertain)}/{len(reviews)}; "
+              f"LLM fallback for {len(uncertain)}.")
+
+    if uncertain:
+        classify_all(client, uncertain,
+                     on_progress=(lambda f: on_progress(0.3 + f * 0.7)) if on_progress else None,
+                     context=context)
+        for r in uncertain:
+            r["_llm_labeled"] = True
+    elif on_progress:
+        on_progress(1.0)
+    return reviews
+
+
 def save_classified(reviews: list, source_file: str) -> str:
     """
     Save the classified reviews next to the source, prefixed with 'classified_'.
@@ -209,8 +255,9 @@ def save_classified(reviews: list, source_file: str) -> str:
     base = os.path.basename(source_file)
     out_path = os.path.join(folder, f"classified_{base}")
 
+    clean = [{k: v for k, v in r.items() if k != "_embedding"} for r in reviews]
     with open(out_path, "w", encoding="utf-8") as f:
-        json.dump(reviews, f, ensure_ascii=False, indent=2)
+        json.dump(clean, f, ensure_ascii=False, indent=2)
 
     return out_path
 
