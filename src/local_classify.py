@@ -5,15 +5,35 @@ Fast, local classification distilled from the LLM. Loads the logistic-regression
 models trained by train_classifiers.py (src/models/) and, for a batch of review
 embeddings, predicts sentiment / category / constructive with a confidence gate.
 
-A review is "confident" only if ALL THREE models clear LOCAL_CLASSIFY_THRESHOLD;
-the caller then keeps it local and sends the rest to the LLM. If the models are
-absent (not trained/committed) everything degrades to LLM classification.
+A review is "confident" only if ALL THREE models clear their per-task threshold
+(see below); the caller then keeps it local and sends the rest to the LLM. If the
+models are absent (not trained/committed) everything degrades to LLM classification.
 """
 
 import os
 
 MODELS_DIR = os.path.join(os.path.dirname(__file__), "models")
-THRESHOLD = float(os.environ.get("LOCAL_CLASSIFY_THRESHOLD", "0.7"))
+
+# Per-task confidence gates. A review is kept local only when ALL THREE tasks
+# clear their own threshold; otherwise it falls back to the LLM. Category is the
+# binding constraint on how much we can offload, but it is low-stakes (it only
+# colors the donut and a category tag), so it gates loosest to let more reviews
+# skip the LLM. Sentiment (drives Issues/Praise routing) and constructive (the
+# noise filter) gate tighter to keep their quality. LOCAL_CLASSIFY_THRESHOLD, if
+# set, becomes the default for any task without its own LOCAL_THRESHOLD_* value.
+_GLOBAL = os.environ.get("LOCAL_CLASSIFY_THRESHOLD")
+
+
+def _thr(env_name, default):
+    v = os.environ.get(env_name)
+    if v is not None:
+        return float(v)
+    return float(_GLOBAL) if _GLOBAL is not None else default
+
+
+T_SENTIMENT = _thr("LOCAL_THRESHOLD_SENTIMENT", 0.65)
+T_CATEGORY = _thr("LOCAL_THRESHOLD_CATEGORY", 0.55)
+T_CONSTRUCTIVE = _thr("LOCAL_THRESHOLD_CONSTRUCTIVE", 0.65)
 
 _models = None
 _tried = False
@@ -31,7 +51,8 @@ def _load():
             "category": joblib.load(os.path.join(MODELS_DIR, "clf_category.joblib")),
             "constructive": joblib.load(os.path.join(MODELS_DIR, "clf_constructive.joblib")),
         }
-        print(f"Local classifier loaded (confidence threshold {THRESHOLD}).")
+        print(f"Local classifier loaded (thresholds  sentiment {T_SENTIMENT}  "
+              f"category {T_CATEGORY}  constructive {T_CONSTRUCTIVE}).")
     except Exception as err:
         print(f"Local classifier unavailable ({err}); using LLM classification.")
         _models = None
@@ -58,8 +79,8 @@ def classify(embeddings):
     out = []
     for i in range(len(X)):
         si, ci, oi = se_p[i].argmax(), ca_p[i].argmax(), co_p[i].argmax()
-        confident = (se_p[i][si] >= THRESHOLD and ca_p[i][ci] >= THRESHOLD
-                     and co_p[i][oi] >= THRESHOLD)
+        confident = (se_p[i][si] >= T_SENTIMENT and ca_p[i][ci] >= T_CATEGORY
+                     and co_p[i][oi] >= T_CONSTRUCTIVE)
         out.append({
             "sentiment": str(se_c[si]),
             "category": str(ca_c[ci]),
