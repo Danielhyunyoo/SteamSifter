@@ -51,6 +51,10 @@ UNCLEAR_LABEL = "unclear"      # fallback when a review fits no discovered theme
 THEME_METHOD = os.environ.get("THEME_METHOD", "llm").lower()
 AUTO_EMBED_MIN = int(os.environ.get("AUTO_EMBED_MIN", "250"))  # constructive-review
                                 # threshold at which "auto" switches llm -> embed
+MIN_THEME_COUNT = int(os.environ.get("MIN_THEME_COUNT", "2"))
+                                # a theme needs at least this many reviews to count
+                                # as recurring; below it we drop it, so thin negative
+                                # pools stop "clawing at straws" with 1-review themes
 
 
 # ----------------------------------------------------------------------------
@@ -88,7 +92,7 @@ def sample_reviews(reviews: list, sample_size: int) -> list:
     return [reviews[i] for i in range(0, len(reviews), stride)][:sample_size]
 
 
-def discover_themes(client, reviews: list) -> list:
+def discover_themes(client, reviews: list, target: str = TARGET_THEME_COUNT) -> list:
     """
     Ask the model to propose a list of specific, named themes from a sample.
 
@@ -108,7 +112,7 @@ def discover_themes(client, reviews: list) -> list:
     prompt = (
         "Below is a sample of player reviews for one video game on Steam, each "
         "tagged with a rough category.\n\n"
-        f"Identify {TARGET_THEME_COUNT} SPECIFIC, recurring themes across these "
+        f"Identify {target} SPECIFIC, recurring themes across these "
         "reviews. Each theme should be concrete and actionable, not a vague "
         "category. For example, prefer 'blatant cheaters in Premier mode' over "
         "just 'cheating'.\n\n"
@@ -398,6 +402,34 @@ def analyze_reviews(client, all_reviews: list):
     return records, len(reviews), len(noise), themes
 
 
+def _target_theme_count(n: int) -> str:
+    """Scale how many themes to request to the pool size, so a thin pool is not
+    padded with invented, single-review 'themes'."""
+    if n < 15:
+        return "2 to 4"
+    if n < 40:
+        return "3 to 6"
+    if n < 120:
+        return "5 to 9"
+    return "8 to 12"
+
+
+def _route_side(r: dict) -> str:
+    """
+    Decide whether a constructive review belongs on the Issues ('neg') or Praise
+    ('pos') side, trusting the player's own recommend vote first and using the
+    model's sentiment to refine it:
+
+      - Thumbs-down (voted_up False)  -> Issues (the player did not recommend it).
+      - Otherwise (thumbs-up, or the flag is missing) -> Issues only if the text is
+        clearly negative (a fan naming a real problem); everything else -> Praise,
+        so lukewarm/neutral recommendations stop padding the Issues side.
+    """
+    if r.get('voted_up') is False:
+        return 'neg'
+    return 'neg' if r.get('sentiment') == 'negative' else 'pos'
+
+
 def analyze_both(client, classified: list, on_progress=None) -> dict:
     """
     Theme negative-leaning and positive-leaning reviews SEPARATELY, from a single
@@ -405,8 +437,8 @@ def analyze_both(client, classified: list, on_progress=None) -> dict:
 
     Returns:
       {
-        "negative": [theme records],   # negative + neutral constructive reviews
-        "positive": [theme records],   # positive constructive reviews
+        "negative": [theme records],   # Issues: not-recommended, or recommended-but-negative
+        "positive": [theme records],   # Praise: recommended / positive-leaning reviews
         "noise": {"count": int, "examples": [...]},
         "sentiment_totals": {"positive", "negative", "neutral"},  # all reviews
         "total_reviews": int,
@@ -414,8 +446,8 @@ def analyze_both(client, classified: list, on_progress=None) -> dict:
     """
     noise = [r for r in classified if not r.get("is_constructive", True)]
     constructive = [r for r in classified if r.get("is_constructive", True)]
-    negative = [r for r in constructive if r.get("sentiment") in ("negative", "neutral")]
-    positive = [r for r in constructive if r.get("sentiment") == "positive"]
+    negative = [r for r in constructive if _route_side(r) == "neg"]
+    positive = [r for r in constructive if _route_side(r) == "pos"]
 
     # Resolve "auto" once per report: embed only pays off when there are enough
     # constructive reviews; below the threshold the LLM path is faster and richer.
@@ -428,15 +460,20 @@ def analyze_both(client, classified: list, on_progress=None) -> dict:
         if not group:
             return []
         print(f"Theming {label} reviews ({len(group)}) via {method}...")
+        records = None
         if method == "embed":
             try:
                 from cluster_themes import theme_group_embed
-                return theme_group_embed(client, group)
+                records = theme_group_embed(client, group)
             except Exception as err:
                 print(f"  Embedding theming failed ({err}); using LLM theming.")
-        themes = discover_themes(client, group)
-        assign_themes(client, group, themes)
-        return aggregate_themes(group, themes)
+        if records is None:
+            # Ask for fewer themes on a small pool so we do not invent straws.
+            themes = discover_themes(client, group, _target_theme_count(len(group)))
+            assign_themes(client, group, themes)
+            records = aggregate_themes(group, themes)
+        # A theme needs recurrence: drop any backed by fewer than MIN_THEME_COUNT reviews.
+        return [rec for rec in records if rec.get('count', 0) >= MIN_THEME_COUNT]
 
     if on_progress:
         on_progress(0.0, "Finding what players want fixed")
@@ -475,7 +512,7 @@ def analyze_both(client, classified: list, on_progress=None) -> dict:
         theme = r.get("theme", "") if co else ""
         if theme in (UNCLEAR_LABEL, "noise", None):
             theme = ""
-        side = ("pos" if r.get("sentiment") == "positive" else "neg") if co else ""
+        side = _route_side(r) if co else ""
         reviews_compact.append({
             "co": co,                                  # constructive (1) vs noise (0)
             "sd": side,                                # 'neg' / 'pos' / ''
