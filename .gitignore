@@ -28,3 +28,6 @@ steamsifter_report.html
 Thumbs.db
 training_samples.jsonl
 src/data/
+
+# local embedding cache for train_classifiers.py
+.embed_cache.joblib
