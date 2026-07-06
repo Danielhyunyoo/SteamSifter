@@ -21,6 +21,7 @@ import argparse
 import json
 import math
 import os
+import re
 import time
 
 from typing import Literal
@@ -279,6 +280,58 @@ def _is_english(language) -> int:
     return 1 if (language or "").lower() == "english" else 0
 
 
+_SNIPPET_STOP = set(
+    "the a an and or of to in on for with is are was were be been it its this that "
+    "these those you your they them their as at by from about into over under not no "
+    "but if then so than can will just get got very really more most some any all my "
+    "me we our he she his her out up down do does did has have had game games really".split()
+)
+
+
+def _signal_weights(name, description, category):
+    """Weighted theme keywords for snippet scoring: the name matters most, then the
+    description, then the (generic) category. Short words and stopwords are ignored."""
+    weights = {}
+    for text, w in ((description, 2), (category, 1), (name, 3)):
+        for tok in re.findall(r"[a-z0-9]+", (text or "").lower()):
+            if len(tok) >= 3 and tok not in _SNIPPET_STOP:
+                weights[tok] = max(weights.get(tok, 0), w)
+    return weights
+
+
+def relevant_snippet(text, name="", description="", category="", width=300):
+    """
+    Return the ~width-char slice of a review most about the given theme, instead of
+    always its opening (long reviews often lead with unrelated chatter before getting
+    to the point). Scores each sentence by weighted overlap with the theme's words;
+    falls back to the opening when nothing matches. Excerpts are marked with an
+    ellipsis so it is clear the preview is not the start of the review.
+    """
+    text = (text or "").strip()
+    if len(text) <= width:
+        return text
+    weights = _signal_weights(name, description, category)
+    best_start, best_score = 0, 0
+    if weights:
+        for m in re.finditer(r"[^.!?\n]+", text):
+            toks = set(re.findall(r"[a-z0-9]+", m.group(0).lower()))
+            score = sum(weights[tok] for tok in toks if tok in weights)
+            if score > best_score:
+                best_score, best_start = score, m.start()
+    if not best_score:
+        return text[:width].rstrip()
+    snippet = text[best_start:best_start + width]
+    tail = best_start + width < len(text)
+    if tail:                      # avoid cutting the last word mid-way
+        cut = snippet.rfind(" ")
+        if cut > width * 0.6:
+            snippet = snippet[:cut]
+    snippet = snippet.strip()
+    prefix = "\u2026 " if best_start > 0 else ""
+    suffix = " \u2026" if tail else ""
+    return prefix + snippet + suffix
+
+
 def aggregate_themes(reviews: list, themes: list) -> list:
     """
     Build the final theme records: count, impact score, and example quotes.
@@ -319,9 +372,10 @@ def aggregate_themes(reviews: list, themes: list) -> list:
             picked.append(r)
             if len(picked) >= EXAMPLES_PER_THEME:
                 break
+        info = meta.get(theme_name, {"description": "", "category": "other", "kind": "feature"})
         examples = [
             {
-                "text": r["text"][:300],
+                "text": relevant_snippet(r["text"], theme_name, info["description"], info["category"]),
                 "helpful_votes": r.get("helpful_votes", 0),
                 "playtime_at_review_hours": r.get("playtime_at_review_hours", 0),
                 "steamid": r.get("steamid"),
@@ -335,7 +389,6 @@ def aggregate_themes(reviews: list, themes: list) -> list:
         # Impact score: the summed weight of every review under this theme.
         impact = round(sum(review_impact(r) for r in items), 1)
 
-        info = meta.get(theme_name, {"description": "", "category": "other", "kind": "feature"})
         records.append({
             "theme": theme_name,
             "category": info["category"],
