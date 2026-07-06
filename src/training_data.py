@@ -79,15 +79,27 @@ def count():
 
 
 def export_jsonl():
-    """Yield the whole dataset as JSONL lines (for the admin download)."""
+    """
+    Yield the whole dataset as JSONL lines (for the admin download).
+
+    Pages through the Redis list in chunks. A single LRANGE 0 -1 over tens of
+    thousands of items can exceed a managed-Redis (e.g. Upstash) response-size
+    limit and raise, which previously got swallowed and produced a silent 0-byte
+    download even though the samples were safely stored.
+    """
     rc = _redis()
     if rc is not None:
         try:
-            for raw in rc.lrange(SAMPLES_KEY, 0, -1):
-                yield raw + "\n"
+            total = rc.llen(SAMPLES_KEY)
+        except Exception as err:
+            print(f"training_data: Redis llen failed ({err}); trying local file.")
+            total = 0
+        if total:
+            for start in range(0, total, _CHUNK):
+                # LRANGE is inclusive on both ends.
+                for raw in rc.lrange(SAMPLES_KEY, start, start + _CHUNK - 1):
+                    yield raw + "\n"
             return
-        except Exception:
-            pass
     if os.path.exists(LOCAL_PATH):
         with open(LOCAL_PATH, encoding="utf-8") as f:
             for line in f:
