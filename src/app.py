@@ -367,7 +367,7 @@ HOME_PAGE = """<!DOCTYPE html>
     setDisabled(true);
     var started = raw.started || Date.now();
     var timer = setInterval(function () {
-      var s = Math.floor((Date.now() - started) / 1000);
+      var s = Math.max(0, Math.floor((Date.now() - started) / 1000));
       elapsedEl.textContent = Math.floor(s / 60) + ':' + (s % 60 < 10 ? '0' : '') + (s % 60);
     }, 1000);
     document.getElementById('bgJobDismiss').onclick = function () {
@@ -737,7 +737,7 @@ ANALYZING_PAGE = """<!DOCTYPE html>
   } catch (e) {}
   var elapsedEl = document.getElementById('elapsed');
   var elapsedTimer = setInterval(function () {
-    var s = Math.floor((Date.now() - startTime) / 1000);
+    var s = Math.max(0, Math.floor((Date.now() - startTime) / 1000));
     var m = Math.floor(s / 60), sec = s % 60;
     if (elapsedEl) elapsedEl.textContent = 'Elapsed ' + m + ':' + (sec < 10 ? '0' : '') + sec;
     if (hasError) clearInterval(elapsedTimer);
