@@ -235,17 +235,24 @@ def job_get(job_id):
         try:
             h = r.hgetall(f"job:{job_id}")
             if h:
+                sa = float(h.get("started_at") or 0)
                 return {"percent": int(h.get("percent", 0)),
                         "message": h.get("message", ""),
                         "done": h.get("done") == "1",
                         "error": h.get("error") or None,
-                        "started_at": float(h.get("started_at") or 0)}
+                        "started_at": sa,
+                        "elapsed": max(0.0, time.time() - sa) if sa else 0.0}
             return None
         except Exception:
             pass
     with _mem_lock:
         j = _mem_jobs.get(job_id)
-        return dict(j) if j else None
+        if not j:
+            return None
+        out = dict(j)
+        sa = out.get('started_at') or 0
+        out['elapsed'] = max(0.0, time.time() - sa) if sa else 0.0
+        return out
 
 
 # ----------------------------------------------------------------------------

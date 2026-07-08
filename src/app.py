@@ -383,7 +383,7 @@ HOME_PAGE = """<!DOCTYPE html>
       fetch('/progress?job=' + encodeURIComponent(raw.job))
         .then(function (r) { return r.json(); })
         .then(function (d) {
-          if (d.started_at) started = d.started_at * 1000;   // server clock wins
+          if (typeof d.elapsed === 'number') started = Date.now() - d.elapsed * 1000;  // anchor to server elapsed (skew-free)
           var p = Math.min(100, d.percent || 0);
           fill.style.width = p + '%';
           pctEl.textContent = Math.floor(p * 10) + ' / 1000';
@@ -837,7 +837,7 @@ ANALYZING_PAGE = """<!DOCTYPE html>
       .then(r => r.json())
       .then(d => {
         if (d.error) { showError(d.error); return; }
-        if (d.started_at) startTime = d.started_at * 1000;   // server clock wins
+        if (typeof d.elapsed === 'number') startTime = Date.now() - d.elapsed * 1000;  // anchor to server elapsed (skew-free)
         target = d.percent || 0;
         if (d.message) msg.textContent = d.message;
         if (d.done) {
