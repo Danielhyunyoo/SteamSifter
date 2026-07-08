@@ -528,12 +528,15 @@ def analyze_both(client, classified: list, on_progress=None) -> dict:
         # A theme needs recurrence: drop any backed by fewer than MIN_THEME_COUNT reviews.
         return [rec for rec in records if rec.get('count', 0) >= MIN_THEME_COUNT]
 
+    # Theme both sides CONCURRENTLY: they are independent groups, so their
+    # clustering and (batched) label calls overlap instead of running back to back.
     if on_progress:
-        on_progress(0.0, "Finding what players want fixed")
-    negative_records = theme_group(negative, "negative")
-    if on_progress:
-        on_progress(0.55, "Finding what players love")
-    positive_records = theme_group(positive, "positive")
+        on_progress(0.05, "Finding themes on both sides")
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        f_neg = pool.submit(theme_group, negative, "negative")
+        f_pos = pool.submit(theme_group, positive, "positive")
+        negative_records = f_neg.result()
+        positive_records = f_pos.result()
     if on_progress:
         on_progress(1.0, "Finalizing report")
 

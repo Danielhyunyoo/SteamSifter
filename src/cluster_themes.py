@@ -124,7 +124,9 @@ def cluster_vectors(vectors):
     k = min(_adaptive_k(n), n)
     if k <= 1:
         return [0] * n
-    return KMeans(n_clusters=k, n_init=10, random_state=0).fit_predict(X).tolist()
+    # n_init=3 (not 10): 3 restarts cluster fine for theming and cut KMeans CPU
+    # ~3x, which matters on a shared/low-CPU instance.
+    return KMeans(n_clusters=k, n_init=3, random_state=0).fit_predict(X).tolist()
 
 
 def _majority_category(reviews):
