@@ -56,12 +56,13 @@ def _openai_client():
 
 
 def _embed_chunk(client, chunk):
-    """Embed one chunk, with a small retry for transient rate-limit/network blips."""
+    """Embed one chunk as float32 arrays (small memory), with a small retry."""
     import time as _time
+    import numpy as _np
     for attempt in range(1, 4):
         try:
             resp = client.embeddings.create(model=EMBED_MODEL, input=chunk)
-            return [item.embedding for item in resp.data]
+            return [_np.asarray(item.embedding, dtype="float32") for item in resp.data]
         except Exception:
             if attempt == 3:
                 raise
@@ -72,9 +73,11 @@ def embed_texts(texts):
     """
     Return one embedding vector per input text, IN ORDER, via OpenAI.
 
-    Chunks are embedded CONCURRENTLY (each call only waits on the API), so a
-    large input (thousands of reviews) no longer serializes into a long stall.
-    pool.map preserves input order, so vectors stay aligned with texts.
+    Vectors are float32 numpy arrays, not Python float lists: at a few thousand
+    reviews that is ~6x less memory (each is 1536-dim), which matters on a small
+    instance. Chunks embed CONCURRENTLY but in bounded waves of MAX_WORKERS, so we
+    never hold more than that many chunk responses at once (caps peak memory).
+    pool.map preserves order, so vectors stay aligned with texts.
     """
     client = _openai_client()
     chunks = [
@@ -84,12 +87,12 @@ def embed_texts(texts):
     ]
     if not chunks:
         return []
-    if len(chunks) == 1:
-        return _embed_chunk(client, chunks[0])
     vectors = []
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
-        for chunk_vecs in pool.map(lambda c: _embed_chunk(client, c), chunks):
-            vectors.extend(chunk_vecs)
+        for i in range(0, len(chunks), MAX_WORKERS):
+            wave = chunks[i:i + MAX_WORKERS]
+            for chunk_vecs in pool.map(lambda c: _embed_chunk(client, c), wave):
+                vectors.extend(chunk_vecs)
     return vectors
 
 
