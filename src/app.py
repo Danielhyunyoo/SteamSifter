@@ -1276,4 +1276,6 @@ if __name__ == "__main__":
     # admin login would silently fail; relax it only here.
     app.config["SESSION_COOKIE_SECURE"] = False
     # threaded=True lets the progress endpoint respond while a job runs locally.
-    app.run(debug=True, threaded=True, port=5000)
+    # Debug/Werkzeug console is off unless explicitly opted in (never in prod,
+    # which runs via gunicorn and does not execute this block anyway).
+    app.run(debug=os.environ.get("FLASK_DEBUG") == "1", threaded=True, port=5000)
