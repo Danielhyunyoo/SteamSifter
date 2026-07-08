@@ -35,6 +35,12 @@ T_SENTIMENT = _thr("LOCAL_THRESHOLD_SENTIMENT", 0.65)
 T_CATEGORY = _thr("LOCAL_THRESHOLD_CATEGORY", 0.55)
 T_CONSTRUCTIVE = _thr("LOCAL_THRESHOLD_CONSTRUCTIVE", 0.65)
 
+# Speed-first mode: treat EVERY review as confident, so the hybrid classifier
+# sends nothing to the LLM (classification becomes embed + local predict, a few
+# seconds instead of minutes). Trades accuracy (esp. category ~69%) for speed,
+# and pauses new LLM training-sample collection while it is on.
+LOCAL_ONLY = os.environ.get("LOCAL_CLASSIFY_ONLY", "0").strip().lower() in ("1", "true", "yes", "on")
+
 _models = None
 _tried = False
 
@@ -51,8 +57,9 @@ def _load():
             "category": joblib.load(os.path.join(MODELS_DIR, "clf_category.joblib")),
             "constructive": joblib.load(os.path.join(MODELS_DIR, "clf_constructive.joblib")),
         }
-        print(f"Local classifier loaded (thresholds  sentiment {T_SENTIMENT}  "
-              f"category {T_CATEGORY}  constructive {T_CONSTRUCTIVE}).")
+        mode = "LOCAL-ONLY (no LLM fallback)" if LOCAL_ONLY else (
+            f"thresholds  sentiment {T_SENTIMENT}  category {T_CATEGORY}  constructive {T_CONSTRUCTIVE}")
+        print(f"Local classifier loaded ({mode}).")
     except Exception as err:
         print(f"Local classifier unavailable ({err}); using LLM classification.")
         _models = None
@@ -79,8 +86,8 @@ def classify(embeddings):
     out = []
     for i in range(len(X)):
         si, ci, oi = se_p[i].argmax(), ca_p[i].argmax(), co_p[i].argmax()
-        confident = (se_p[i][si] >= T_SENTIMENT and ca_p[i][ci] >= T_CATEGORY
-                     and co_p[i][oi] >= T_CONSTRUCTIVE)
+        confident = LOCAL_ONLY or (se_p[i][si] >= T_SENTIMENT and ca_p[i][ci] >= T_CATEGORY
+                                   and co_p[i][oi] >= T_CONSTRUCTIVE)
         out.append({
             "sentiment": str(se_c[si]),
             "category": str(ca_c[ci]),

@@ -274,6 +274,60 @@ def _dedupe_themes(client, labeled):
     return merged
 
 
+class _BatchClusterLabel(BaseModel):
+    """One cluster's label within a single batched labeling call."""
+    index: int
+    name: str
+    description: str
+    kind: Literal["feature", "emotional"]
+
+
+_LABEL_SAMPLE_BATCHED = 6   # fewer reviews per cluster so many clusters fit one prompt
+
+
+def _label_clusters_batched(client, items):
+    """
+    Name/describe ALL clusters in ONE LLM call instead of one call per cluster, to
+    cut theme round-trips. items: list of (label, members). Returns
+    {label: (name, description, kind, category)}, with a safe fallback for any
+    cluster the model omits.
+    """
+    from llm import generate_json
+
+    meta, blocks = {}, []
+    for i, (lab, members) in enumerate(items):
+        category = _majority_category(members)
+        meta[i] = (lab, category)
+        sample = sorted(members,
+                        key=lambda r: (r.get("helpful_votes", 0),
+                                       r.get("playtime_at_review_hours", 0)),
+                        reverse=True)[:_LABEL_SAMPLE_BATCHED]
+        revs = " | ".join((r.get("text") or "").strip()[:180] for r in sample)
+        blocks.append(f"Cluster {i} (rough category: {category}):\n{revs}")
+
+    prompt = (
+        "Below are clusters of player reviews for one video game on Steam; each "
+        "cluster groups reviews about the same topic.\n\n"
+        "For EACH cluster, name the single CONCRETE thing it is about (3-6 words): "
+        "be specific and honest (e.g. cheating, FPS/performance, monetization/"
+        "prices). Never use vague umbrella phrases like 'mixed experience' or "
+        "'general feedback'. Also give a one-line description and a 'kind' "
+        "('feature' for a specific actionable aspect; 'emotional' for mood, "
+        "nostalgia, or a farewell). Return one object per cluster with its index.\n\n"
+        + "\n\n".join(blocks)
+    )
+    results = generate_json(client, prompt, list[_BatchClusterLabel]) or []
+    by_i = {r.index: r for r in results}
+    out = {}
+    for i, (lab, category) in meta.items():
+        r = by_i.get(i)
+        if r and (r.name or "").strip():
+            out[lab] = (r.name.strip(), r.description, r.kind, category)
+        else:
+            out[lab] = (f"theme {lab}", "", "feature", category)
+    return out
+
+
 def theme_group_embed(client, reviews):
     """Theme one polarity group by embedding + k-means + per-cluster labeling."""
     from themes import ThemeDef, aggregate_themes, UNCLEAR_LABEL
@@ -298,22 +352,20 @@ def theme_group_embed(client, reviews):
             for r in members:
                 r["theme"] = UNCLEAR_LABEL
 
-    def label(item):
-        lab, members = item
-        category = _majority_category(members)
-        try:
-            res = _label_cluster(client, members, category)
-            name = (res.name or "").strip() or f"theme {lab}"
-            return members, name, res.description, res.kind, category
-        except Exception as err:
-            print(f"  Cluster label failed ({err}); using a generic name.")
-            return members, f"theme {lab}", "", "feature", category
+    # Label every cluster in ONE call (far fewer round-trips), with a per-cluster
+    # fallback for any the model omits.
+    try:
+        label_map = _label_clusters_batched(client, list(real.items()))
+    except Exception as err:
+        print(f"  Batched cluster labeling failed ({err}); using generic names.")
+        label_map = {lab: (f"theme {lab}", "", "feature", _majority_category(m))
+                     for lab, m in real.items()}
+    labeled = [(members, *label_map[lab]) for lab, members in real.items()]
 
-    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
-        labeled = list(pool.map(label, real.items()))
-
-    # One LLM pass to merge themes that are the same idea worded differently.
-    labeled = _dedupe_themes(client, labeled)
+    # Optional semantic dedupe (an extra LLM call). Off by default for speed;
+    # the cosine-centroid merge above already collapses near-duplicate clusters.
+    if os.environ.get("THEME_DEDUPE", "0").strip().lower() in ("1", "true", "yes", "on"):
+        labeled = _dedupe_themes(client, labeled)
 
     theme_defs = []
     used_names = set()
