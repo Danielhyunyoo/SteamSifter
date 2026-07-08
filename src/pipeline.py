@@ -26,7 +26,8 @@ from llm import get_client, generate_json
 from pydantic import BaseModel
 from fetch_reviews import (fetch_reviews, fetch_reviews_balanced, save_reviews,
                            fetch_review_total, fetch_player_summaries, fetch_game_context)
-from classify_batch import classify_all, hybrid_classify_all, save_classified
+from concurrent.futures import ThreadPoolExecutor
+from classify_batch import classify_all, hybrid_classify_all, save_classified, MAX_WORKERS
 from themes import analyze_both
 from report import build_html
 import store
@@ -157,14 +158,20 @@ def _attach_translations(analysis: dict, client) -> None:
         return
 
     BATCH = 20   # smaller batches: the model omits fewer entries per call
-    for start in range(0, len(examples), BATCH):
-        _translate_batch(client, examples[start:start + BATCH])
+    # Batches touch disjoint example dicts, so they run concurrently (each call
+    # only waits on the API); collapses the translation stall on large reports.
+    def _run(batches, force=False):
+        if not batches:
+            return
+        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
+            list(pool.map(lambda b: _translate_batch(client, b, force), batches))
+
+    _run([examples[s:s + BATCH] for s in range(0, len(examples), BATCH)])
 
     # Safety net: force-translate obvious non-Latin quotes the first pass missed.
     missed = [ex for ex in examples
               if not ex.get("translation") and _looks_non_latin(ex.get("text", ""))]
-    for start in range(0, len(missed), BATCH):
-        _translate_batch(client, missed[start:start + BATCH], force=True)
+    _run([missed[s:s + BATCH] for s in range(0, len(missed), BATCH)], force=True)
 
 
 def _attach_authors(analysis: dict) -> None:

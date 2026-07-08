@@ -55,15 +55,41 @@ def _openai_client():
     return OpenAI(api_key=key)
 
 
+def _embed_chunk(client, chunk):
+    """Embed one chunk, with a small retry for transient rate-limit/network blips."""
+    import time as _time
+    for attempt in range(1, 4):
+        try:
+            resp = client.embeddings.create(model=EMBED_MODEL, input=chunk)
+            return [item.embedding for item in resp.data]
+        except Exception:
+            if attempt == 3:
+                raise
+            _time.sleep(2 * attempt)
+
+
 def embed_texts(texts):
-    """Return one embedding vector per input text, in order, via OpenAI."""
+    """
+    Return one embedding vector per input text, IN ORDER, via OpenAI.
+
+    Chunks are embedded CONCURRENTLY (each call only waits on the API), so a
+    large input (thousands of reviews) no longer serializes into a long stall.
+    pool.map preserves input order, so vectors stay aligned with texts.
+    """
     client = _openai_client()
+    chunks = [
+        [((t or " ").strip()[:MAX_REVIEW_CHARS] or " ")
+         for t in texts[start:start + EMBED_BATCH]]
+        for start in range(0, len(texts), EMBED_BATCH)
+    ]
+    if not chunks:
+        return []
+    if len(chunks) == 1:
+        return _embed_chunk(client, chunks[0])
     vectors = []
-    for start in range(0, len(texts), EMBED_BATCH):
-        chunk = [((t or " ").strip()[:MAX_REVIEW_CHARS] or " ")
-                 for t in texts[start:start + EMBED_BATCH]]
-        resp = client.embeddings.create(model=EMBED_MODEL, input=chunk)
-        vectors.extend(item.embedding for item in resp.data)
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
+        for chunk_vecs in pool.map(lambda c: _embed_chunk(client, c), chunks):
+            vectors.extend(chunk_vecs)
     return vectors
 
 
