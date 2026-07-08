@@ -192,6 +192,45 @@ def _attach_authors(analysis: dict) -> None:
             ex["author_avatar"] = info["avatar"]
 
 
+TRAINING_SAMPLE_SIZE = int(os.environ.get("TRAINING_SAMPLE_SIZE", "60"))
+
+
+def _collect_training_sample_async(client, reviews, context):
+    """
+    Keep the distillation flywheel alive in local-only mode.
+
+    When LOCAL_CLASSIFY_ONLY is on, no review hits the LLM during analysis, so no
+    fresh (text, label) samples get collected. To fix that without touching load
+    time, we LLM-classify a small RANDOM sample in a background daemon thread AFTER
+    the report is already built and returned, then log those rows for future
+    retraining. Best-effort: any failure (or the instance spinning down) is fine.
+    Returns the Thread (handy for tests); production ignores it.
+    """
+    if TRAINING_SAMPLE_SIZE <= 0 or not reviews:
+        return None
+    import random
+    import threading
+
+    def _work():
+        try:
+            import training_data
+            # Work on COPIES so we never disturb the already-built report, and drop
+            # the heavy embedding from each copy.
+            sample = [dict(r) for r in random.sample(
+                reviews, min(TRAINING_SAMPLE_SIZE, len(reviews)))]
+            for r in sample:
+                r.pop("_embedding", None)
+            classify_all(client, sample, context=context)   # real LLM labels, in place
+            training_data.log_samples(sample)
+            print(f"[training] background-collected {len(sample)} LLM-labeled samples.")
+        except Exception as err:
+            print(f"[training] background sample failed ({err}).")
+
+    th = threading.Thread(target=_work, daemon=True)
+    th.start()
+    return th
+
+
 def get_analysis(app_id: str, max_reviews: int = DEFAULT_MAX_REVIEWS, refresh: bool = False,
                  max_age_days: float = DEFAULT_MAX_AGE_DAYS, progress=None) -> dict:
     """
@@ -253,7 +292,9 @@ def get_analysis(app_id: str, max_reviews: int = DEFAULT_MAX_REVIEWS, refresh: b
     # of a fast local classifier. Best-effort; never blocks the analysis.
     try:
         import training_data
-        training_data.log_samples([r for r in classified if r.get("_llm_labeled")])
+        llm_labeled = [r for r in classified if r.get("_llm_labeled")]
+        if llm_labeled:
+            training_data.log_samples(llm_labeled)
     except Exception as err:
         print(f"Training-data logging skipped ({err}).")
 
@@ -280,6 +321,11 @@ def get_analysis(app_id: str, max_reviews: int = DEFAULT_MAX_REVIEWS, refresh: b
 
     # Persist the analysis (Redis if configured, else a local file).
     store.save_analysis(app_id, analysis, max_age_days)
+
+    # Local-only mode logged nothing above; collect a background LLM sample so
+    # future retrainings still get fresh data (does not affect load time).
+    if not any(r.get("_llm_labeled") for r in classified):
+        _collect_training_sample_async(client, classified, game_context)
 
     return analysis
 
