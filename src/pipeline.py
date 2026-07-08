@@ -214,6 +214,7 @@ def get_analysis(app_id: str, max_reviews: int = DEFAULT_MAX_REVIEWS, refresh: b
     reason = "refresh requested" if refresh else "no fresh/usable cache"
     print(f"Cache MISS for app {app_id}: {reason}. Running analysis...")
     client = get_client()
+    _t = time.time()
 
     # Step 1: fetch ALL reviews (reuse the saved file unless refreshing).
     report(3, "Fetching reviews")
@@ -225,6 +226,7 @@ def get_analysis(app_id: str, max_reviews: int = DEFAULT_MAX_REVIEWS, refresh: b
         print(f"Reusing fetched reviews from {paths['reviews']}")
         with open(paths["reviews"], encoding="utf-8") as f:
             reviews = json.load(f)
+    print(f"[timing] fetch: {time.time() - _t:.1f}s ({len(reviews)} reviews)"); _t = time.time()
 
     # Step 2: classify (sentiment, category, is_constructive). Maps to 10%-55%.
     report(10, "Classifying reviews")
@@ -238,12 +240,14 @@ def get_analysis(app_id: str, max_reviews: int = DEFAULT_MAX_REVIEWS, refresh: b
         context=game_context,
     )
     save_classified(classified, paths["reviews"])
+    print(f"[timing] classify: {time.time() - _t:.1f}s"); _t = time.time()
 
     # Step 3: theme negative and positive sides separately. Maps to 55%-98%.
     analysis = analyze_both(
         client, classified,
         on_progress=lambda f, msg: report(55 + int(f * 43), msg),
     )
+    print(f"[timing] theme: {time.time() - _t:.1f}s"); _t = time.time()
 
     # Passively collect (review text, LLM label) samples for future distillation
     # of a fast local classifier. Best-effort; never blocks the analysis.
@@ -267,6 +271,7 @@ def get_analysis(app_id: str, max_reviews: int = DEFAULT_MAX_REVIEWS, refresh: b
         _attach_authors(analysis)
     except Exception as err:
         print(f"Author lookup failed ({err}); continuing without avatars.")
+    print(f"[timing] enrich (urls+translations+authors): {time.time() - _t:.1f}s")
 
     # Record the game's true total review count, for the review-growth refresh gate.
     analysis["steam_total_reviews"] = fetch_review_total(app_id) or analysis.get("total_reviews", 0)

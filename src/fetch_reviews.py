@@ -36,7 +36,7 @@ STEAM_REVIEWS_URL = "https://store.steampowered.com/appreviews/{app_id}"
 MAX_PER_PAGE = 100
 
 # A polite pause (in seconds) between page requests so we don't hammer Steam.
-DEFAULT_REQUEST_DELAY = 0.5
+DEFAULT_REQUEST_DELAY = float(os.environ.get("STEAM_REQUEST_DELAY", "0.5"))
 
 # How long to wait on any single request before giving up (seconds).
 REQUEST_TIMEOUT = 20
@@ -197,10 +197,17 @@ def fetch_reviews_balanced(app_id: str, max_reviews: int = 300,
     English view usable.
     """
     en_target = max(1, int(max_reviews * ENGLISH_FRACTION))
-    english = fetch_reviews(app_id, max_reviews=en_target,
-                            review_type=review_type, language="english")
-    everything = fetch_reviews(app_id, max_reviews=max_reviews,
-                               review_type=review_type, language="all")
+    # Fetch the English slice and the all-languages pool CONCURRENTLY: they are
+    # independent paginations, so overlapping them removes the shorter one from
+    # the wall-clock instead of adding to it.
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        f_en = pool.submit(fetch_reviews, app_id, max_reviews=en_target,
+                           review_type=review_type, language="english")
+        f_all = pool.submit(fetch_reviews, app_id, max_reviews=max_reviews,
+                            review_type=review_type, language="all")
+        english = f_en.result()
+        everything = f_all.result()
     merged, seen = [], set()
     for r in english + everything:           # English first, so it is guaranteed
         rid = r.get("recommendation_id")
