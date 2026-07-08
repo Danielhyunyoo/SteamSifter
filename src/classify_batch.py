@@ -32,8 +32,11 @@ from classify import ReviewCategory
 # Tuning knobs
 # ----------------------------------------------------------------------------
 
-BATCH_SIZE = 40                 # reviews per API call; smaller batches return
-                                # faster and overlap better when run concurrently
+BATCH_SIZE = int(os.environ.get("LLM_BATCH_SIZE", "40"))
+                                # reviews per API call; smaller batches return
+                                # faster and overlap better when run concurrently.
+                                # Raise (e.g. 60-80) to cut the number of calls at
+                                # scale; watch structured-output reliability + tokens.
 MAX_WORKERS = int(os.environ.get("LLM_MAX_WORKERS", "8"))
                                 # how many batch calls run at once. Paid OpenAI
                                 # handles this easily; set LLM_MAX_WORKERS=1-2 for a
