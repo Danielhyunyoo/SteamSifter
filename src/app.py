@@ -942,28 +942,28 @@ ABOUT_PAGE = """<!DOCTYPE html>
 
     <h2>How It Works</h2>
     <ol>
-      <li><strong>Search and ingest:</strong> resolves a game name to its Steam app ID and pulls the most recent reviews from Steam's free public API, each with its recommend flag, helpful votes, playtime, and date.</li>
+      <li><strong>Search and ingest:</strong> resolves a game name to its Steam app ID and pulls the most recent reviews (up to a few thousand) from Steam's free public API, each with its recommend flag, helpful votes, playtime, language, and date.</li>
       <li><strong>Filter for signal:</strong> a relevance classifier separates constructive feedback from off-topic noise, jokes, and review-bomb spam.</li>
-      <li><strong>Classify:</strong> each review is tagged with sentiment and a category (bug, performance, gameplay, cheating, monetization, UI/UX, content, community, praise) using structured model output. Batches run concurrently to keep it fast.</li>
-      <li><strong>Theme:</strong> reviews are grouped into specific, named themes for each side, by an LLM pass for typical volumes or by embeddings + k-means clustering at scale (chosen automatically).</li>
-      <li><strong>Rank by impact:</strong> themes are sorted by frequency plus behavioral weight, so issues raised by long-playtime, highly-upvoted reviewers rank above low-effort rage reviews.</li>
-      <li><strong>Present:</strong> a dashboard with a summary scoreboard, a sentiment donut, a sentiment-over-time trend, and an Issues / Praise toggle with ranked theme cards and clickable example quotes, each showing the reviewer's avatar and name plus an English translation for non-English reviews. Every report also offers live filters (recommendation, playtime, language), a print / save-as-PDF export, and a rich link-preview card when shared.</li>
+      <li><strong>Classify:</strong> each review is tagged with sentiment and a category (bug, performance, gameplay, cheating, monetization, UI/UX, content, community, praise). This runs on fast local models distilled from the LLM (logistic regression over embeddings), with an LLM fallback for uncertain cases, and keeps growing its own training set in the background for future retraining.</li>
+      <li><strong>Theme:</strong> reviews are grouped into specific, named themes for each side, by an LLM pass for small sets or by embeddings + k-means clustering at scale, with all clusters named in one batched call and the two sides themed concurrently.</li>
+      <li><strong>Route and rank:</strong> each review lands on the Issues or Praise side by the player's recommend vote first, refined by sentiment; themes are then ranked by frequency plus behavioral weight, so issues raised by long-playtime, highly-upvoted reviewers rank above low-effort rage reviews.</li>
+      <li><strong>Present:</strong> a two-column dashboard, a full-width scoreboard, the sentiment donut and sentiment-over-time trend side by side, and Issues / Praise theme cards in two columns with clickable example quotes (each showing the reviewer's avatar and name plus an English translation for non-English reviews, excerpted at the theme-relevant part of long reviews). Every report also offers live filters (recommendation, playtime, language), a print / save-as-PDF export, and a rich link-preview card when shared.</li>
     </ol>
     <p class="note">"Impact" is an inferred heuristic (frequency, sentiment, playtime, helpful-votes), not ground truth. It is presented as an informed estimate.</p>
 
     <h2>Tech Stack</h2>
     <ul>
       <li><strong>Reviews and search:</strong> Steam's public appreviews API (free, no key), plus the games-filtered storefront search that surfaces niche titles over DLC</li>
-      <li><strong>AI and ML:</strong> OpenAI (gpt-4.1-mini) with structured output via Pydantic, swappable to free-tier Gemini; concurrent batched classification, plus theming that scales via OpenAI embeddings and scikit-learn k-means, with a centroid-merge and LLM dedupe pass to consolidate duplicate themes</li>
-      <li><strong>Frontend:</strong> Steam-styled, mobile-responsive UI with Chart.js charts, a summary scoreboard, a Steam-style rating badge, live review filters, and a print / save-as-PDF view</li>
-      <li><strong>Backend:</strong> Flask and gunicorn, background jobs with a live progress bar, a Redis-shared (multi-worker-ready) job store, and per-game caching persisted to Redis</li>
-      <li><strong>Sharing and security:</strong> dynamic OpenGraph share cards generated with Pillow, plus a hardening pass (app-ID validation, rate-limited admin auth, security headers, DOM-safe rendering)</li>
+      <li><strong>AI and ML:</strong> OpenAI (gpt-4.1-mini) with structured output via Pydantic, swappable to free-tier Gemini; per-review classification distilled into local scikit-learn models (over text-embedding-3-small embeddings) with confidence gating and an optional fully-local mode; theming that scales via embeddings and k-means with single-call cluster labeling and a centroid merge to consolidate duplicates</li>
+      <li><strong>Frontend:</strong> Steam-styled, mobile-responsive two-column UI with Chart.js charts (pinned with Subresource Integrity), a summary scoreboard, a Steam-style rating badge, live review filters, a print / save-as-PDF view, a blurred-banner loading screen, and admin-managed announcements and a seasonal theme</li>
+      <li><strong>Backend:</strong> Flask and gunicorn, background jobs with a live progress bar, a Redis-shared (multi-worker-ready) job store, per-game caching persisted to Redis, and environment-tunable concurrency, batch size, review count, and confidence thresholds</li>
+      <li><strong>Sharing and security:</strong> dynamic OpenGraph share cards generated with Pillow, plus a hardening pass and full audit (app-ID validation, rate-limited admin auth, security headers, CDN Subresource Integrity, gated debug server, DOM-safe rendering)</li>
       <li><strong>Deployment:</strong> Render on the custom domain steamsifter.com (Cloudflare DNS), configured entirely through environment variables</li>
     </ul>
 
     <h2>Current Limitations</h2>
-    <p>SteamSifter is deployed and open to anyone, but it is a solo project tuned for light traffic: a single worker on a free Render instance sharing one AI key. A first-time analysis takes about one to a few minutes depending on volume, and scales up to ~1,500 reviews via an embedding-based theming path; results are cached so popular titles are only re-analyzed when their reviews grow. The code is multi-worker ready, so scaling is mostly a matter of paid hosting rather than a rewrite.</p>
-    <p>As of June 24, 2026, SteamSifter runs on the OpenAI API (gpt-4.1-mini) and can switch to free-tier Gemini when needed.</p>
+    <p>SteamSifter is deployed and open to anyone, but it is a solo project tuned for light traffic: a single worker on a free Render instance sharing one AI key. Classification runs on distilled local models, so it no longer dominates the wait; analyses often finish in well under a minute at typical volumes and stay bounded into the low minutes at several thousand reviews, capped mainly by the OpenAI tier's throughput and the free instance's memory. Results are cached so popular titles are only re-analyzed when their reviews grow, and the code is multi-worker ready, so scaling out is mostly a matter of paid hosting rather than a rewrite.</p>
+    <p>As of July 2026, SteamSifter runs on the OpenAI API (gpt-4.1-mini) with distilled scikit-learn classifiers, and can switch to free-tier Gemini when needed.</p>
   </main>
 </body>
 </html>"""
