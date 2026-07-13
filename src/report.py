@@ -827,12 +827,23 @@ def relative_time(epoch):
 # button, and a "/" shortcut to focus the in-report search. Plain string (not an
 # f-string), injected as a value, so its braces and regex backslashes are safe.
 BANNER_JS = """<script>
+window.__bannerShow = function (img) { img.style.display = 'block'; };
 window.__bannerError = function (img) {
   try {
     var list = JSON.parse(img.getAttribute('data-srcs') || '[]');
     var i = (parseInt(img.getAttribute('data-i'), 10) || 0) + 1;
-    if (i < list.length) { img.setAttribute('data-i', i); img.src = list[i]; }
-    else { img.style.display = 'none'; }
+    if (i < list.length) { img.setAttribute('data-i', i); img.src = list[i]; return; }
+    var aid = img.getAttribute('data-appid');
+    if (aid && !img.getAttribute('data-api')) {
+      img.setAttribute('data-api', '1');
+      fetch('/api/header?appid=' + encodeURIComponent(aid)).then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (d && d.url && list.indexOf(d.url) === -1) { img.src = d.url; }
+          else { img.style.display = 'none'; }
+        }).catch(function () { img.style.display = 'none'; });
+      return;
+    }
+    img.style.display = 'none';
   } catch (e) { img.style.display = 'none'; }
 };
 </script>"""
@@ -982,6 +993,7 @@ def build_html(analysis: dict, title: str, refresh_state: dict = None) -> str:
         _sep = "&" if "?" in _srcs[0] else "?"
         thumb_html = (
             f'<img class="gamethumb" alt="" data-srcs=\'{json.dumps(_srcs)}\' data-i="0" '
+            f'data-appid="{appid}" style="display:none" onload="__bannerShow(this)" '
             f'src="{_srcs[0]}{_sep}t={date.today().toordinal()}" onerror="__bannerError(this)">'
         )
     else:
