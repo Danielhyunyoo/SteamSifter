@@ -1104,6 +1104,42 @@ def _duration_options(pairs, default):
     return out
 
 
+def _ago(ts):
+    """Rough time-since label for a past timestamp."""
+    if not ts:
+        return "unknown"
+    secs = int(time.time() - ts)
+    if secs < 3600:
+        return f"{secs // 60} min ago"
+    if secs < 86400:
+        return f"{secs // 3600} h ago"
+    return f"{secs // 86400} d ago"
+
+
+def _training_status_html():
+    """Total training samples plus how many are NEW since the last download, with a
+    light recommendation on whether a retrain is worthwhile yet."""
+    import training_data
+    total = training_data.count()
+    base = store.training_baseline_get()
+    if not base:
+        return (f'<div class="msg">Training samples collected: <strong>{total:,}</strong>. '
+                'Download once to start tracking new samples since your last retrain.</div>')
+    base_count = int(base.get("count", 0))
+    new = max(0, total - base_count)
+    pct = round(new / base_count * 100) if base_count else 0
+    ready = new >= max(2000, int(0.2 * base_count))
+    color = "#6dc960" if ready else "#c9a24a"
+    verdict = ("Good time to download and retrain." if ready
+               else "Keep collecting; not enough new data to be worth a retrain yet.")
+    return (
+        f'<div class="msg">Training samples collected: <strong>{total:,}</strong></div>'
+        f'<div class="ann-item"><div class="t">{new:,} new since last download '
+        f'&middot; {pct}% growth &middot; {_ago(base.get("at"))}</div>'
+        f'<div class="m" style="color:{color}">{verdict}</div></div>'
+    )
+
+
 def _admin_page(message, signed_in=False):
     """Render the admin page with a message and either a form or the owner tools."""
     note = f'<div class="msg">{message}</div>' if message else ''
@@ -1152,8 +1188,8 @@ def _admin_page(message, signed_in=False):
     body = (
         '<div id="adminManage">'
         + note
-        + f'<div class="msg">Training samples collected: {training_data.count():,}</div>'
-        '<a class="btn" href="/admin/training.jsonl">Download training data</a> '
+        + _training_status_html()
+        + '<a class="btn" href="/admin/training.jsonl">Download training data</a> '
         '<a class="btn" href="/admin/logout">Sign out</a> '
         '<a class="btn ghost" href="/">Back to site</a>'
 
@@ -1265,6 +1301,7 @@ def admin_training():
     if not is_admin():
         return redirect("/admin")
     import training_data
+    store.training_baseline_set(training_data.count())   # snapshot "downloaded now"
     return Response(
         training_data.export_jsonl(),
         mimetype="application/x-ndjson",

@@ -597,7 +597,7 @@ def render_scoreboard(analysis: dict) -> str:
         + card(ICON_UP, "Positive", f"{pct_pos}%", "positive", "good")
         + card(ICON_DOWN, "Negative", f"{pct_neg}%", "negative", "bad")
         + card(ICON_THEMES, "Themes found", themes_count, "themes")
-        + card(ICON_FIX, "Top fix", top_fix, "topfix", "small bad")
+        + card(ICON_FIX, "Top Critique", top_fix, "topfix", "small bad")
         + card(ICON_PRAISE, "Top praise", top_praise, "toppraise", "small good")
         + '</div>'
     )
@@ -995,7 +995,7 @@ def build_html(analysis: dict, title: str, refresh_state: dict = None) -> str:
         if top_praise_name:
             bits.append(f"Top praise: {top_praise_name}")
         if top_fix_name:
-            bits.append(f"Top fix: {top_fix_name}")
+            bits.append(f"Top critique: {top_fix_name}")
         detail = " \u00b7 ".join(bits) or "AI review analysis"
         og_desc = f"{total_reviews} reviews analyzed. {detail}."
         og_title = f"{title} - SteamSifter review analysis"

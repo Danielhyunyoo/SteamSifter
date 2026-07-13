@@ -3,7 +3,7 @@ og_card.py
 
 Generate the 1200x630 social-share (OpenGraph) image for a game: the Steam
 banner blurred as an ambient background, a sharp crop of the banner beside the
-title, the Steam-style rating pill, and the top praise / top fix themes. Served
+title, the Steam-style rating pill, and the top praise / top critique themes. Served
 by the /og/<appid>.png route so shared links unfurl into a rich card.
 
 The real banner is fetched from Steam's CDN at render time; if it is unavailable
@@ -208,7 +208,7 @@ def render(appid, title, analysis=None, banner=None):
                           font=f_value, fill=WHITE, anchor="lm")
                 y += 50
             if fix:
-                draw.text((x, y), "▼ Top fix", font=f_label, fill=RED, anchor="lm")
+                draw.text((x, y), "▼ Top critique", font=f_label, fill=RED, anchor="lm")
                 draw.text((x + label_col, y), _truncate(draw, fix, f_value, full_w - label_col),
                           font=f_value, fill=WHITE, anchor="lm")
     else:

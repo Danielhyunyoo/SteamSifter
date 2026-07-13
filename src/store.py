@@ -364,3 +364,16 @@ def theme_clear():
     cfg = _site_load()
     cfg["theme"] = None
     _site_save(cfg)
+
+
+def training_baseline_get():
+    """The {count, at} snapshot recorded at the last training-data download."""
+    return _site_load().get("training_baseline")
+
+
+def training_baseline_set(count):
+    """Record the current sample count as the last-downloaded baseline, so the
+    admin page can show how many samples are new since the last retrain."""
+    cfg = _site_load()
+    cfg["training_baseline"] = {"count": int(count), "at": time.time()}
+    _site_save(cfg)
