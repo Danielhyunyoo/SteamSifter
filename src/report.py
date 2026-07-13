@@ -976,9 +976,13 @@ def build_html(analysis: dict, title: str, refresh_state: dict = None) -> str:
             f"https://cdn.cloudflare.steamstatic.com/steam/apps/{appid}/header.jpg",
             f"https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/{appid}/capsule_616x353.jpg",
         ]
+        header_image = analysis.get("header_image")
+        if header_image:
+            _srcs.insert(0, header_image)   # real (content-hashed) Steam URL goes first
+        _sep = "&" if "?" in _srcs[0] else "?"
         thumb_html = (
             f'<img class="gamethumb" alt="" data-srcs=\'{json.dumps(_srcs)}\' data-i="0" '
-            f'src="{_srcs[0]}?t={date.today().toordinal()}" onerror="__bannerError(this)">'
+            f'src="{_srcs[0]}{_sep}t={date.today().toordinal()}" onerror="__bannerError(this)">'
         )
     else:
         thumb_html = ""

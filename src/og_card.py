@@ -51,8 +51,9 @@ def _cover(img, w, h):
     return img.crop((x, y, x + w, y + h))
 
 
-def _fetch_banner(appid):
-    url = HEADER_URL.format(appid=appid) + f"?t={int(time.time() // 86400)}"
+def _fetch_banner(appid, url=None):
+    if not url:
+        url = HEADER_URL.format(appid=appid) + f"?t={int(time.time() // 86400)}"
     r = requests.get(url, headers=HEADERS, timeout=10)
     r.raise_for_status()
     return Image.open(io.BytesIO(r.content)).convert("RGB")
@@ -117,7 +118,7 @@ def render(appid, title, analysis=None, banner=None):
     """Return PNG bytes for the share card. `banner` is for testing/overrides."""
     if banner is None:
         try:
-            banner = _fetch_banner(appid)
+            banner = _fetch_banner(appid, (analysis or {}).get("header_image"))
         except Exception:
             banner = None
 

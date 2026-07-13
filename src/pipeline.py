@@ -25,7 +25,8 @@ import time
 from llm import get_client, generate_json
 from pydantic import BaseModel
 from fetch_reviews import (fetch_reviews, fetch_reviews_balanced, save_reviews,
-                           fetch_review_total, fetch_player_summaries, fetch_game_context)
+                           fetch_review_total, fetch_player_summaries, fetch_game_context,
+                           fetch_app_header)
 from concurrent.futures import ThreadPoolExecutor
 from classify_batch import classify_all, hybrid_classify_all, save_classified, MAX_WORKERS
 from themes import analyze_both
@@ -316,6 +317,7 @@ def get_analysis(app_id: str, max_reviews: int = DEFAULT_MAX_REVIEWS, refresh: b
 
     # Record the game's true total review count, for the review-growth refresh gate.
     analysis["steam_total_reviews"] = fetch_review_total(app_id) or analysis.get("total_reviews", 0)
+    analysis["header_image"] = fetch_app_header(app_id)   # real banner URL for report + share card
 
     report(100, "Done")
 

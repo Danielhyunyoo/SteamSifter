@@ -263,6 +263,35 @@ _CONTENT_DESCRIPTORS = {
 }
 
 
+_HEADER_CACHE = {}
+_HEADER_TTL = 86400   # header URLs rarely change; cache aggressively
+
+
+def fetch_app_header(app_id: str):
+    """
+    Return the game's real header-image URL from Steam appdetails, or None.
+
+    Newer games store assets under a content-hashed path
+    (.../apps/<id>/<hash>/header.jpg), so guessing .../apps/<id>/header.jpg 404s
+    for them and the banner goes blank. appdetails gives the exact URL. Cached.
+    """
+    now = time.time()
+    hit = _HEADER_CACHE.get(app_id)
+    if hit and now - hit[0] < _HEADER_TTL:
+        return hit[1]
+    url = None
+    try:
+        resp = requests.get(APPDETAILS_URL, params={"appids": app_id, "filters": "basic"},
+                            headers=HEADERS, timeout=REQUEST_TIMEOUT)
+        entry = (resp.json() or {}).get(str(app_id), {})
+        if entry.get("success"):
+            url = entry.get("data", {}).get("header_image") or None
+    except Exception:
+        url = None
+    _HEADER_CACHE[app_id] = (now, url)
+    return url
+
+
 def fetch_game_context(app_id: str, language: str = "english") -> str:
     """
     Return a short blurb describing the game (title, genres, mature-content

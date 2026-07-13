@@ -29,7 +29,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 
 from search import search_games
 from pipeline import get_analysis, DEFAULT_MAX_AGE_DAYS
-from fetch_reviews import fetch_review_total
+from fetch_reviews import fetch_review_total, fetch_app_header
 from report import build_html
 import store
 
@@ -359,6 +359,9 @@ HOME_PAGE = """<!DOCTYPE html>
     thumb.onload = function () { thumb.style.display = 'block'; };
     thumb.onerror = function () { si++; if (si < srcs.length) thumb.src = srcs[si]; else thumb.style.display = 'none'; };
     thumb.src = srcs[0];
+    fetch('/api/header?appid=' + aid).then(function (r) { return r.json(); }).then(function (d) {
+      if (d && d.url) { si = 0; srcs.unshift(d.url); thumb.src = d.url; }
+    }).catch(function () {});
     box.style.display = 'block';
     function setDisabled(d) {
       input.disabled = d;
@@ -445,6 +448,16 @@ def home():
 def api_search():
     """Return JSON game suggestions for the search box."""
     return jsonify(search_games(request.args.get("q", "")))
+
+
+@app.route("/api/header")
+@limiter.limit("120 per minute")
+def api_header():
+    """Resolve the real Steam header-image URL for a game (for banners), by app id."""
+    appid = request.args.get("appid", "")
+    if not valid_appid(appid):
+        return jsonify({"url": ""})
+    return jsonify({"url": fetch_app_header(appid) or ""})
 
 
 EMPTY_PAGE = """<!DOCTYPE html>
@@ -685,6 +698,17 @@ ANALYZING_PAGE = """<!DOCTYPE html>
       bg.onerror = function () { window.__bannerError(bg); };
       bg.src = srcs[0] + '?t=' + Math.floor(Date.now() / 86400000);
     }
+    // Prefer Steam's real (content-hashed) header URL; guessed paths stay as fallback.
+    fetch('/api/header?appid=' + aid).then(function (r) { return r.json(); }).then(function (d) {
+      if (!d || !d.url) return;
+      srcs.unshift(d.url);
+      [thumb, bg].forEach(function (im) {
+        if (!im) return;
+        im.setAttribute('data-srcs', JSON.stringify(srcs));
+        im.setAttribute('data-i', '0');
+        im.src = d.url;
+      });
+    }).catch(function () {});
   }
 
   const fill = document.getElementById('fill');
