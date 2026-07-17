@@ -1207,6 +1207,8 @@ def build_html(analysis: dict, title: str, refresh_state: dict = None, history: 
   .cat-count {{ color: #6b7785; font-weight: 400; }}
   .cat-num {{ min-width: 70px; }}
   .impact-help {{ font-size: 12px; color: #8f98a0; max-width: 680px; margin: 2px 0 16px; line-height: 1.5; }}
+  .model-note {{ display: flex; align-items: flex-start; gap: 10px; background: rgba(214,178,74,0.10); border: 1px solid rgba(214,178,74,0.4); border-left: 3px solid #d6b24a; border-radius: 6px; padding: 10px 14px; margin: 0 0 18px; color: #d8c48a; font-size: 13px; line-height: 1.5; }}
+  .model-note svg {{ width: 18px; height: 18px; flex: none; margin-top: 1px; }}
   .impact-chip {{ font-size: 11px; font-weight: 700; padding: 2px 9px; border-radius: 3px; margin-left: 8px; cursor: help; white-space: nowrap; }}
   .impact-high {{ background: #66c0f4; color: #0e1620; }}
   .impact-med {{ background: #39698a; color: #dfeaf2; }}
@@ -1317,12 +1319,15 @@ def build_html(analysis: dict, title: str, refresh_state: dict = None, history: 
     .thumb.down {{ background: #fbe9ea !important; color: #b3261e !important; }}
     .unclear {{ background: #f6f8fa !important; border-color: #d0d7de !important; color: #444444 !important; }}
     .bar-track, .cat-track, .sentiment-bar {{ background: #e8edf2 !important; }}
+    .model-note {{ background: #fdf8e6 !important; border-color: #caa63a !important; color: #7a6520 !important; }}
+    .model-note svg {{ stroke: #caa63a !important; }}
   }}
 </style>
 </head>
 <body>
   {header_html}
   <main>
+    <div class="model-note"><svg viewBox="0 0 24 24" fill="none" stroke="#d6b24a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg><span>Heads up: the classifier is still learning, so some reviews may not be categorized 100% accurately. Treat these results as an informed estimate, not ground truth.</span></div>
     {scoreboard_html}
     {filter_bar}
     {charts_row}
