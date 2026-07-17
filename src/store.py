@@ -147,6 +147,26 @@ def history_append(app_id, snapshot, cap=30):
         f.write(payload)
 
 
+def cached_appids(appids):
+    """Return the subset of appids that already have a cached analysis (a cheap
+    existence check; does not load or parse the analysis)."""
+    ids = [str(a) for a in appids if a]
+    if not ids:
+        return set()
+    r = _redis_client()
+    if r is not None:
+        try:
+            pipe = r.pipeline()
+            for a in ids:
+                pipe.exists(f"analysis:{a}")
+            flags = pipe.execute()
+            return {a for a, ok in zip(ids, flags) if ok}
+        except Exception:
+            pass
+    return {a for a in ids
+            if os.path.exists(os.path.join(DATA_DIR, f"analysis_{a}.json"))}
+
+
 # ----------------------------------------------------------------------------
 # Background-job store: shared across gunicorn workers via Redis, with an
 # in-memory fallback for single-process dev. Holds progress for the live bar and

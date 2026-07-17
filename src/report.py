@@ -82,6 +82,13 @@ NAV_SEARCH_JS = """
         span.textContent = g.name;
         row.appendChild(img);
         row.appendChild(span);
+        if (g.cached) {
+          const chk = document.createElement('span');
+          chk.className = 'cachedtag';
+          chk.textContent = '\u2713 cached';
+          chk.title = 'Already analyzed';
+          row.appendChild(chk);
+        }
         row.onclick = function () {
           window.location = '/analyzing?appid=' + g.appid +
             '&title=' + encodeURIComponent(g.name);
@@ -1152,6 +1159,7 @@ def build_html(analysis: dict, title: str, refresh_state: dict = None, history: 
   .navresult:hover {{ background: #1f3346; }}
   .navresult img {{ width: 46px; height: 18px; object-fit: cover; border-radius: 2px; background: #0e1620; }}
   .navresult span {{ font-size: 13px; color: #c7d5e0; }}
+  .navresult .cachedtag {{ margin-left: auto; color: #98c379; font-size: 12px; white-space: nowrap; }}
   main {{ width: 94%; max-width: 1600px; margin: 0 auto; padding: 28px 20px 60px; }}
   h2 {{ font-size: 18px; margin: 24px 0 12px; color: #fff; font-weight: 500; }}
   .toggle-bar {{ position: relative; display: inline-flex; background: #16202d; border: 1px solid #2a3a4d; border-radius: 4px; padding: 3px; margin: 8px 0 4px; }}

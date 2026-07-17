@@ -195,6 +195,7 @@ HOME_PAGE = """<!DOCTYPE html>
   .result:hover { background: #1f3346; }
   .result img { width: 60px; height: 23px; object-fit: cover; border-radius: 3px; background: #0e1620; }
   .result span { font-size: 14px; color: #c7d5e0; }
+  .cachedtag { margin-left: auto; color: #98c379; font-size: 12px; white-space: nowrap; }
   .hint { color: #66758a; font-size: 12px; margin-top: 18px; }
   .site-footer { background: #171a21; border-top: 1px solid #0e1620; padding: 18px 24px; text-align: center; }
   .bgjob { position: fixed; right: 18px; bottom: 18px; width: 280px; background: #16202d; border: 1px solid #2a475e; border-radius: 10px; padding: 14px 16px; box-shadow: 0 6px 24px rgba(0,0,0,0.4); z-index: 50; text-align: left; }
@@ -296,6 +297,13 @@ HOME_PAGE = """<!DOCTYPE html>
       span.textContent = g.name;
       row.appendChild(img);
       row.appendChild(span);
+      if (g.cached) {
+        const chk = document.createElement('span');
+        chk.className = 'cachedtag';
+        chk.textContent = '\u2713 cached';
+        chk.title = 'Already analyzed - opens instantly';
+        row.appendChild(chk);
+      }
       row.onclick = () => analyze(g.appid, g.name);
       results.appendChild(row);
     });
@@ -446,8 +454,12 @@ def home():
 @app.route("/api/search")
 @limiter.limit("120 per minute")   # generous for live typing, caps scripted abuse
 def api_search():
-    """Return JSON game suggestions for the search box."""
-    return jsonify(search_games(request.args.get("q", "")))
+    """Return JSON game suggestions for the search box (with a cached flag)."""
+    results = search_games(request.args.get("q", ""))
+    cached = store.cached_appids([g["appid"] for g in results])
+    for g in results:
+        g["cached"] = str(g["appid"]) in cached
+    return jsonify(results)
 
 
 @app.route("/api/header")
@@ -483,6 +495,7 @@ EMPTY_PAGE = """<!DOCTYPE html>
   .result:hover { background: #1f3346; }
   .result img { width: 60px; height: 23px; object-fit: cover; border-radius: 3px; background: #0e1620; }
   .result span { font-size: 14px; color: #c7d5e0; }
+  .cachedtag { margin-left: auto; color: #98c379; font-size: 12px; white-space: nowrap; }
   .hint { margin-top: 18px; font-size: 13px; }
   .hint a { color: #66c0f4; text-decoration: none; }
 </style>
