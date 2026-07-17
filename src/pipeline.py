@@ -330,6 +330,28 @@ def get_analysis(app_id: str, max_reviews: int = DEFAULT_MAX_REVIEWS, refresh: b
     analysis["steam_total_reviews"] = fetch_review_total(app_id) or analysis.get("total_reviews", 0)
     analysis["header_image"] = fetch_app_header(app_id)   # real banner URL for report + share card
 
+    # Snapshot this analysis into the per-game history so the report can show how
+    # sentiment and the top issues/praise shift across analyses over time.
+    try:
+        def _top_names(recs, k=3):
+            names = []
+            for tt in recs or []:
+                if tt.get("theme") not in ("noise", "unclear"):
+                    names.append(tt["theme"])
+                if len(names) >= k:
+                    break
+            return names
+        store.history_append(app_id, {
+            "at": time.time(),
+            "total": analysis.get("total_reviews", 0),
+            "steam_total": analysis.get("steam_total_reviews", 0),
+            "sent": analysis.get("sentiment_totals", {}),
+            "issues": _top_names(analysis.get("negative", [])),
+            "praises": _top_names(analysis.get("positive", [])),
+        })
+    except Exception as err:
+        print(f"History snapshot skipped ({err}).")
+
     report(100, "Done")
 
     # Persist the analysis (Redis if configured, else a local file).

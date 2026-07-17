@@ -110,6 +110,43 @@ def save_analysis(app_id, analysis, max_age_days):
         f.write(payload)
 
 
+def history_get(app_id):
+    """Return the game's analysis-history snapshots (oldest first), or []."""
+    r = _redis_client()
+    if r is not None:
+        try:
+            raw = r.get(f"history:{app_id}")
+            return json.loads(raw) if raw else []
+        except Exception:
+            pass
+    path = os.path.join(DATA_DIR, f"history_{app_id}.json")
+    if os.path.exists(path):
+        try:
+            with open(path, encoding="utf-8") as f:
+                return json.load(f)
+        except (json.JSONDecodeError, OSError):
+            return []
+    return []
+
+
+def history_append(app_id, snapshot, cap=30):
+    """Append one snapshot to the game's history, kept to the newest `cap`."""
+    hist = history_get(app_id)
+    hist.append(snapshot)
+    hist = hist[-cap:]
+    payload = json.dumps(hist, ensure_ascii=False)
+    r = _redis_client()
+    if r is not None:
+        try:
+            r.set(f"history:{app_id}", payload)   # persistent, no TTL
+            return
+        except Exception:
+            pass
+    os.makedirs(DATA_DIR, exist_ok=True)
+    with open(os.path.join(DATA_DIR, f"history_{app_id}.json"), "w", encoding="utf-8") as f:
+        f.write(payload)
+
+
 # ----------------------------------------------------------------------------
 # Background-job store: shared across gunicorn workers via Redis, with an
 # in-memory fallback for single-process dev. Holds progress for the live bar and

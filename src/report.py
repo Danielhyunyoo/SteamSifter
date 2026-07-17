@@ -893,7 +893,46 @@ QOL_JS = """<script>
 </script>"""
 
 
-def build_html(analysis: dict, title: str, refresh_state: dict = None) -> str:
+def render_history(history) -> str:
+    """A compact 'tracking over time' table: one row per past analysis, newest first."""
+    hist = list(history or [])
+    if not hist:
+        return ""
+    def pct(snap):
+        s = snap.get("sent", {}) or {}
+        tot = sum(s.values()) or 1
+        return round(s.get("positive", 0) / tot * 100), round(s.get("negative", 0) / tot * 100)
+    rows = ""
+    for i in range(len(hist) - 1, -1, -1):
+        snap = hist[i]
+        pos, neg = pct(snap)
+        when = date.fromtimestamp(snap.get("at", 0)).strftime("%b %d, %Y") if snap.get("at") else ""
+        issues = ", ".join(esc(x) for x in (snap.get("issues") or [])) or "&mdash;"
+        praises = ", ".join(esc(x) for x in (snap.get("praises") or [])) or "&mdash;"
+        delta = ""
+        if i > 0:
+            d = pos - pct(hist[i - 1])[0]
+            if d > 0:
+                delta = f" <span class='delta up'>&#9650;{d}</span>"
+            elif d < 0:
+                delta = f" <span class='delta down'>&#9660;{-d}</span>"
+        rows += (f"<tr><td>{when}</td><td>{snap.get('total', 0):,}</td>"
+                 f"<td class='good'>{pos}%{delta}</td><td class='bad'>{neg}%</td>"
+                 f"<td>{issues}</td><td>{praises}</td></tr>")
+    intro = ("This is the first tracked analysis; re-analyze after an update to see how "
+             "issues and praise shift over time." if len(hist) == 1
+             else f"How this game has changed across {len(hist)} analyses (newest first).")
+    return (
+        "<h2>Tracking over time</h2>"
+        f"<p class='trend-sub'>{intro}</p>"
+        "<div class='history-wrap'><table class='history'>"
+        "<thead><tr><th>Analyzed</th><th>Reviews</th><th>Positive</th><th>Negative</th>"
+        "<th>Top issues</th><th>Top praise</th></tr></thead>"
+        f"<tbody>{rows}</tbody></table></div>"
+    )
+
+
+def build_html(analysis: dict, title: str, refresh_state: dict = None, history: list = None) -> str:
     """Assemble the full report from a combined analysis dict (see analyze_both)."""
     neg = analysis.get("negative", [])
     pos = analysis.get("positive", [])
@@ -908,6 +947,7 @@ def build_html(analysis: dict, title: str, refresh_state: dict = None) -> str:
                     f'{esc(rating_label)}</span>') if rating_label else ''
 
     overview_html = render_overview(sentiment_totals, total_reviews, noise.get("count", 0))
+    history_html = render_history(history)
     scoreboard_html = render_scoreboard(analysis)
 
     # Chart.js data: a category donut and an optional sentiment-over-time trend.
@@ -1213,6 +1253,15 @@ def build_html(analysis: dict, title: str, refresh_state: dict = None) -> str:
   .theme-cols {{ column-count: 2; column-gap: 12px; }}
   .theme-cols .section-heading, .theme-cols .unclear, .theme-cols .filter-empty, .theme-cols .empty {{ column-span: all; }}
   .theme-cols .card {{ margin: 0 0 12px; break-inside: avoid; -webkit-column-break-inside: avoid; }}
+  .history-wrap {{ overflow-x: auto; margin: 6px 0 2px; }}
+  .history {{ width: 100%; border-collapse: collapse; font-size: 13px; }}
+  .history th, .history td {{ text-align: left; padding: 8px 12px; border-bottom: 1px solid #233040; vertical-align: top; }}
+  .history th {{ color: #8f98a0; font-weight: 600; text-transform: uppercase; font-size: 11px; letter-spacing: .5px; }}
+  .history td.good {{ color: #98c379; white-space: nowrap; }}
+  .history td.bad {{ color: #e06c75; white-space: nowrap; }}
+  .history .delta {{ font-size: 11px; margin-left: 3px; }}
+  .history .delta.up {{ color: #98c379; }}
+  .history .delta.down {{ color: #e06c75; }}
   @media (max-width: 820px) {{
     /* Tablets and small windows: stack the two-column layouts. */
     .charts-row {{ grid-template-columns: 1fr; }}
@@ -1277,6 +1326,7 @@ def build_html(analysis: dict, title: str, refresh_state: dict = None) -> str:
     <div class="impact-help">Themes are ranked by <strong>impact</strong>: how many reviews raised each one, weighted by the reviewer's playtime and helpful votes. A few experienced, upvoted players outweigh many drive-by reviews. The bar and the High/Med/Low chip are relative to the top theme on each side.</div>
     <div id="side-fix" class="theme-cols">{fix_html}</div>
     <div id="side-love" class="theme-cols" style="display:none">{love_html}</div>
+    {history_html}
     <h2>Low-signal reviews</h2>
     {noise_html}
   </main>

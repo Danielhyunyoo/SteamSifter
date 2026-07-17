@@ -564,7 +564,8 @@ def analyze():
         "reviews_needed": needed,
         "admin": is_admin(),
     }
-    return Response(build_html(analysis, title, refresh_state), mimetype="text/html")
+    return Response(build_html(analysis, title, refresh_state, store.history_get(appid)),
+                    mimetype="text/html")
 
 
 # ----------------------------------------------------------------------------
