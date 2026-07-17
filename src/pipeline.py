@@ -202,8 +202,9 @@ def _collect_training_sample_async(client, reviews, context):
 
     When LOCAL_CLASSIFY_ONLY is on, no review hits the LLM during analysis, so no
     fresh (text, label) samples get collected. To fix that without touching load
-    time, we LLM-classify a small RANDOM sample in a background daemon thread AFTER
-    the report is already built and returned, then log those rows for future
+    time, we LLM-classify a small sample of the reviews the local model was least
+    sure about (active learning) in a background daemon thread AFTER the report is
+    already built and returned, then log those rows for future
     retraining. Best-effort: any failure (or the instance spinning down) is fine.
     Returns the Thread (handy for tests); production ignores it.
     """
@@ -215,15 +216,25 @@ def _collect_training_sample_async(client, reviews, context):
     def _work():
         try:
             import training_data
-            # Work on COPIES so we never disturb the already-built report, and drop
-            # the heavy embedding from each copy.
-            sample = [dict(r) for r in random.sample(
-                reviews, min(TRAINING_SAMPLE_SIZE, len(reviews)))]
+            # Active learning: prefer the reviews the local model was LEAST confident
+            # about (its hard cases, disproportionately the rare/confusable
+            # categories), but sample randomly WITHIN that uncertain pool so
+            # re-analyses of the same game do not keep re-collecting the same rows.
+            scored = [r for r in reviews if r.get("_local_conf") is not None]
+            if scored:
+                scored.sort(key=lambda r: r["_local_conf"])          # least sure first
+                pool = scored[:max(TRAINING_SAMPLE_SIZE, len(scored) // 3)]
+            else:
+                pool = list(reviews)                                  # no scores -> random
+            # Work on COPIES so we never disturb the already-built report; drop the
+            # heavy embedding and the internal confidence field before logging.
+            sample = [dict(r) for r in random.sample(pool, min(TRAINING_SAMPLE_SIZE, len(pool)))]
             for r in sample:
                 r.pop("_embedding", None)
+                r.pop("_local_conf", None)
             classify_all(client, sample, context=context)   # real LLM labels, in place
             training_data.log_samples(sample)
-            print(f"[training] background-collected {len(sample)} LLM-labeled samples.")
+            print(f"[training] background-collected {len(sample)} uncertain LLM-labeled samples.")
         except Exception as err:
             print(f"[training] background sample failed ({err}).")
 

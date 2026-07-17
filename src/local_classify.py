@@ -72,8 +72,8 @@ def available() -> bool:
 
 def classify(embeddings):
     """
-    Return a list of {sentiment, category, is_constructive, confident} per
-    embedding, or None if models are unavailable.
+    Return a list of {sentiment, category, is_constructive, confident, confidence}
+    per embedding, or None if models are unavailable.
     """
     m = _load()
     if m is None:
@@ -93,5 +93,8 @@ def classify(embeddings):
             "category": str(ca_c[ci]),
             "is_constructive": bool(int(co_c[oi])),
             "confident": bool(confident),
+            # min of the three max-probs = how unsure the model is on its weakest
+            # task for this review (drives active-learning training collection).
+            "confidence": float(min(se_p[i][si], ca_p[i][ci], co_p[i][oi])),
         })
     return out

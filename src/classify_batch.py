@@ -222,6 +222,8 @@ def hybrid_classify_all(client, reviews: list, on_progress=None, context: str = 
         preds = local_classify.classify(embs)
         uncertain = []
         for r, p in zip(reviews, preds or []):
+            if p:
+                r["_local_conf"] = p.get("confidence")   # for active-learning sampling
             if p and p["confident"]:
                 r["sentiment"] = p["sentiment"]
                 r["category"] = p["category"]
