@@ -61,8 +61,12 @@ CHECKPOINT_EVERY = 10000    # persist the cache after this many new embeddings
 
 
 def load_samples(path):
-    """Read the JSONL training dump; keep rows that have real text."""
-    rows = []
+    """
+    Read the JSONL training dump; keep rows with real text, de-duplicated by text
+    (keeping the most recent labeling). The same review can be collected across
+    several analyses, and repeats would over-weight it during training.
+    """
+    by_text, order, raw = {}, [], 0
     with open(path, encoding="utf-8") as f:
         for line in f:
             line = line.strip()
@@ -72,8 +76,17 @@ def load_samples(path):
                 r = json.loads(line)
             except ValueError:
                 continue
-            if (r.get("t") or "").strip():
-                rows.append(r)
+            txt = (r.get("t") or "").strip()
+            if not txt:
+                continue
+            raw += 1
+            if txt not in by_text:
+                order.append(txt)
+            by_text[txt] = r          # keep the latest label seen for this text
+    rows = [by_text[t] for t in order]
+    if raw != len(rows):
+        print(f"Deduplicated {raw - len(rows)} repeated review texts "
+              f"({raw} -> {len(rows)} unique).")
     return rows
 
 
