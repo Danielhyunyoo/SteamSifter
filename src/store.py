@@ -167,6 +167,52 @@ def cached_appids(appids):
             if os.path.exists(os.path.join(DATA_DIR, f"analysis_{a}.json"))}
 
 
+def feedback_get():
+    """All feedback submissions (oldest first), or []."""
+    r = _redis_client()
+    if r is not None:
+        try:
+            raw = r.get("feedback:list")
+            return json.loads(raw) if raw else []
+        except Exception:
+            pass
+    path = os.path.join(DATA_DIR, "feedback.json")
+    if os.path.exists(path):
+        try:
+            with open(path, encoding="utf-8") as f:
+                return json.load(f)
+        except (json.JSONDecodeError, OSError):
+            return []
+    return []
+
+
+def _feedback_save(items):
+    payload = json.dumps(items, ensure_ascii=False)
+    r = _redis_client()
+    if r is not None:
+        try:
+            r.set("feedback:list", payload)   # persistent, no TTL
+            return
+        except Exception:
+            pass
+    os.makedirs(DATA_DIR, exist_ok=True)
+    with open(os.path.join(DATA_DIR, "feedback.json"), "w", encoding="utf-8") as f:
+        f.write(payload)
+
+
+def feedback_add(name, topic, message, cap=500):
+    """Append a feedback submission, kept to the newest `cap`."""
+    items = feedback_get()
+    items.append({"id": uuid.uuid4().hex[:8], "name": name, "topic": topic,
+                  "message": message, "at": time.time()})
+    _feedback_save(items[-cap:])
+
+
+def feedback_delete(fb_id):
+    """Remove one feedback submission by id."""
+    _feedback_save([f for f in feedback_get() if f.get("id") != fb_id])
+
+
 # ----------------------------------------------------------------------------
 # Background-job store: shared across gunicorn workers via Redis, with an
 # in-memory fallback for single-process dev. Holds progress for the live bar and

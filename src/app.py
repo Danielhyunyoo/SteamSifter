@@ -197,6 +197,19 @@ HOME_PAGE = """<!DOCTYPE html>
   .result span { font-size: 14px; color: #c7d5e0; }
   .cachedtag { margin-left: auto; color: #98c379; font-size: 12px; white-space: nowrap; }
   .hint { color: #66758a; font-size: 12px; margin-top: 18px; }
+  .fb { max-width: 460px; margin: 24px auto 0; text-align: left; }
+  .fb summary { color: #66758a; font-size: 13px; cursor: pointer; text-align: center; }
+  .fb summary:hover { color: #66c0f4; }
+  .fb-form { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+  .fb-form input[type=text], .fb-form select, .fb-form textarea { width: 100%; padding: 9px 11px; font-size: 13px; border-radius: 6px; border: 1px solid #2a475e; background: #16202d; color: #fff; }
+  .fb-form textarea { min-height: 80px; resize: vertical; }
+  .fb-form button { align-self: flex-start; border: 1px solid #2a475e; background: #16202d; color: #66c0f4; border-radius: 6px; padding: 8px 14px; font-size: 13px; font-weight: 600; cursor: pointer; }
+  .fb-form button:hover { background: #1f3346; }
+  .fb-form button:disabled { opacity: .6; cursor: default; }
+  .fb-msg { font-size: 13px; min-height: 16px; }
+  .fb-msg.ok { color: #98c379; }
+  .fb-msg.err { color: #e06c75; }
+  .hp { position: absolute; left: -9999px; width: 1px; height: 1px; opacity: 0; }
   .site-footer { background: #171a21; border-top: 1px solid #0e1620; padding: 18px 24px; text-align: center; }
   .bgjob { position: fixed; right: 18px; bottom: 18px; width: 280px; background: #16202d; border: 1px solid #2a475e; border-radius: 10px; padding: 14px 16px; box-shadow: 0 6px 24px rgba(0,0,0,0.4); z-index: 50; text-align: left; }
   .bgjob-label { color: #66c0f4; font-size: 11px; letter-spacing: 1px; text-transform: uppercase; }
@@ -244,12 +257,28 @@ HOME_PAGE = """<!DOCTYPE html>
         <div id="results" class="results" style="display:none"></div>
       </div>
       <div class="hint">First-time analysis usually takes 1 to 3 minutes. After that, repeat lookups are instant.</div>
+      <details class="fb">
+        <summary>Have feedback or a feature request?</summary>
+        <form id="fbForm" class="fb-form" autocomplete="off">
+          <input type="text" name="name" placeholder="Name or company (optional)" maxlength="80">
+          <select name="topic">
+            <option>Feature request</option>
+            <option>Bug report</option>
+            <option>General feedback</option>
+            <option>Other</option>
+          </select>
+          <textarea name="message" placeholder="Your suggestion or feedback..." maxlength="2000" required></textarea>
+          <input type="text" name="website" class="hp" tabindex="-1" aria-hidden="true">
+          <button type="submit">Send feedback</button>
+          <div id="fbMsg" class="fb-msg"></div>
+        </form>
+      </details>
     </div>
   </div>
 
   <footer class="site-footer">
     <div class="footer-links">
-      <a href="/about">About SteamSifter</a>
+      <a href="/about">About SteamSifter</a>{{FOOTER_EXTRA}}
       <a href="https://github.com/Danielhyunyoo/SteamSifter" target="_blank" rel="noopener" title="GitHub" aria-label="GitHub"><svg viewBox="0 0 24 24"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg></a>
       <a href="https://steamcommunity.com/profiles/76561198990353371/" target="_blank" rel="noopener" title="Steam" aria-label="Steam"><svg viewBox="0 0 24 24"><path d="M11.979 0C5.678 0 .511 4.86.022 11.037l6.432 2.658c.545-.371 1.203-.589 1.912-.589.063 0 .125.004.188.006l2.861-4.142V8.91c0-2.495 2.028-4.524 4.524-4.524s4.524 2.029 4.524 4.524c0 2.494-2.028 4.524-4.524 4.524h-.105l-4.076 2.911c0 .052.004.105.004.158 0 1.875-1.515 3.396-3.39 3.396-1.635 0-3.016-1.173-3.331-2.727L.436 15.27C1.862 20.307 6.486 24 11.979 24c6.627 0 11.999-5.373 11.999-12S18.605 0 11.979 0zM7.54 18.21l-1.473-.61c.262.543.714.999 1.314 1.25 1.297.539 2.793-.076 3.332-1.375.263-.63.264-1.319.005-1.949s-.75-1.121-1.377-1.383c-.624-.26-1.29-.249-1.878-.03l1.523.63c.956.4 1.409 1.5 1.009 2.455-.397.957-1.497 1.41-2.454 1.012H7.54zm11.415-9.303c0-1.662-1.353-3.015-3.015-3.015-1.665 0-3.015 1.353-3.015 3.015 0 1.665 1.35 3.015 3.015 3.015 1.663 0 3.015-1.35 3.015-3.015zm-5.273-.005c0-1.252 1.013-2.266 2.265-2.266 1.249 0 2.266 1.014 2.266 2.266 0 1.251-1.017 2.265-2.266 2.265-1.253 0-2.265-1.014-2.265-2.265z"/></svg></a>
       <a href="https://www.linkedin.com/in/danielhyunwooyoo/" target="_blank" rel="noopener" title="LinkedIn" aria-label="LinkedIn"><svg viewBox="0 0 24 24"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg></a>
@@ -335,6 +364,22 @@ HOME_PAGE = """<!DOCTYPE html>
     var el = document.querySelector('.ann[data-ann="' + id + '"]');
     if (el) { el.classList.add('dismissing'); setTimeout(function () { el.style.display = 'none'; }, 300); }
   }
+  (function () {
+    var f = document.getElementById('fbForm');
+    if (!f) return;
+    f.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var msg = document.getElementById('fbMsg'), btn = f.querySelector('button');
+      btn.disabled = true; msg.className = 'fb-msg'; msg.textContent = 'Sending...';
+      fetch('/feedback', { method: 'POST', body: new FormData(f) })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (d && d.ok) { f.innerHTML = '<div class="fb-msg ok">Thanks! Your feedback was sent.</div>'; }
+          else { msg.className = 'fb-msg err'; msg.textContent = (d && d.error) || 'Could not send, try again.'; btn.disabled = false; }
+        })
+        .catch(function () { msg.className = 'fb-msg err'; msg.textContent = 'Could not send, try again.'; btn.disabled = false; });
+    });
+  })();
 
   // Background-analysis widget: if a game is still analyzing (started before the
   // user returned to the home page), show its progress, disable search until it
@@ -440,9 +485,17 @@ def _render_home():
             "input[type=text]{background:rgba(16,22,32,0.55) !important;}"
             "</style>"
         )
+    footer_extra = ""
+    donate = os.environ.get("DONATE_URL", "").strip()
+    if donate.startswith(("http://", "https://")):
+        footer_extra += (f'<a href="{html.escape(donate)}" target="_blank" rel="noopener" '
+                         'title="Support SteamSifter">&#9749; Support</a>')
+    if is_admin():
+        footer_extra += '<a href="/admin" title="Owner tools">Admin</a>'
     return (HOME_PAGE
             .replace("{{ANNOUNCEMENTS}}", ann_html)
-            .replace("{{THEME_STYLE}}", theme_style))
+            .replace("{{THEME_STYLE}}", theme_style)
+            .replace("{{FOOTER_EXTRA}}", footer_extra))
 
 
 @app.route("/")
@@ -470,6 +523,21 @@ def api_header():
     if not valid_appid(appid):
         return jsonify({"url": ""})
     return jsonify({"url": fetch_app_header(appid) or ""})
+
+
+@app.route("/feedback", methods=["POST"])
+@limiter.limit("5 per minute; 20 per hour")
+def feedback():
+    """Public feedback submission (rate-limited, honeypot-protected)."""
+    if (request.form.get("website") or "").strip():   # honeypot: bots fill hidden fields
+        return jsonify({"ok": True})
+    message = (request.form.get("message") or "").strip()[:2000]
+    if not message:
+        return jsonify({"ok": False, "error": "Please enter a message."}), 400
+    name = (request.form.get("name") or "").strip()[:80]
+    topic = (request.form.get("topic") or "General feedback").strip()[:60]
+    store.feedback_add(name, topic, message)
+    return jsonify({"ok": True})
 
 
 EMPTY_PAGE = """<!DOCTYPE html>
@@ -1178,6 +1246,28 @@ def _training_status_html():
     )
 
 
+def _feedback_html():
+    """Admin list of submitted feedback, newest first, each with a delete button."""
+    items = store.feedback_get()
+    if not items:
+        return '<div class="msg">No feedback yet.</div>'
+    out = ""
+    for f in reversed(items):
+        who = f' &middot; <span class="exp">{html.escape(f.get("name", ""))}</span>' if f.get("name") else ""
+        body = html.escape(f.get("message", "")).replace(chr(10), "<br>")
+        out += (
+            '<div class="ann-item">'
+            f'<div class="t">{html.escape(f.get("topic", "Feedback"))}{who} '
+            f'&middot; <span class="exp">{_ago(f.get("at"))}</span></div>'
+            f'<div class="m">{body}</div>'
+            '<form method="post" action="/admin/feedback/delete" style="margin:6px 0 0">'
+            f'<input type="hidden" name="id" value="{html.escape(f.get("id", ""))}">'
+            '<button class="btn ghost mini" type="submit">Delete</button></form>'
+            '</div>'
+        )
+    return out
+
+
 def _admin_page(message, signed_in=False):
     """Render the admin page with a message and either a form or the owner tools."""
     note = f'<div class="msg">{message}</div>' if message else ''
@@ -1243,6 +1333,8 @@ def _admin_page(message, signed_in=False):
         '<div style="margin-top:12px"><button class="btn" type="submit">Post announcement</button></div>'
         '</form>'
 
+        '<h2>User feedback</h2>'
+        + _feedback_html() +
         '<h2>Seasonal background gradient</h2>'
         + theme_status +
         '<form method="post" action="/admin/theme">'
@@ -1305,6 +1397,15 @@ def admin_announce_delete():
     if not is_admin():
         return redirect("/admin")
     store.announcement_delete((request.form.get("id") or "").strip())
+    return redirect("/admin")
+
+
+@app.route("/admin/feedback/delete", methods=["POST"])
+def admin_feedback_delete():
+    """Owner: remove one feedback submission by id."""
+    if not is_admin():
+        return redirect("/admin")
+    store.feedback_delete((request.form.get("id") or "").strip())
     return redirect("/admin")
 
 
