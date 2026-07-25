@@ -1347,9 +1347,7 @@ def build_html(analysis: dict, title: str, refresh_state: dict = None, history: 
     <div class="footer-links">
       <a href="/about">About SteamSifter</a>
       <a href="https://github.com/Danielhyunyoo/SteamSifter" target="_blank" rel="noopener">GitHub</a>
-      <a href="https://steamcommunity.com/profiles/76561198990353371/" target="_blank" rel="noopener">Steam</a>
-      <a href="https://www.linkedin.com/in/danielhyunwooyoo/" target="_blank" rel="noopener">LinkedIn</a>
-    </div>
+      <a href="https://steamcommunity.com/profiles/76561198990353371/" target="_blank" rel="noopener">Steam</a>    </div>
     <div class="disclaimer">SteamSifter is an independent project and is not affiliated with, endorsed by, or sponsored by Valve or Steam. "Steam" is a trademark of Valve Corporation.</div>
   </footer>
   {chartdata_script}
