@@ -161,6 +161,7 @@ FILTER_BAR_HTML = """
       <option value="en">English only</option>
     </select>
   </label>
+  <!--JUMP_NAV-->
   <span class="filtered-count" id="filteredCount"></span>
 </div>
 """
@@ -329,6 +330,19 @@ FILTER_JS = """
 
   ['f-rec', 'f-pt', 'f-lang'].forEach(function (id) {
     var e = document.getElementById(id); if (e) e.addEventListener('change', recompute);
+  });
+
+  // Jump-to nav: smooth-scroll to a section, then briefly flash its header.
+  Array.prototype.forEach.call(document.querySelectorAll('.jump-btn'), function (b) {
+    b.addEventListener('click', function () {
+      var target = document.getElementById(b.getAttribute('data-target'));
+      if (!target) return;
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      target.classList.remove('jump-flash');
+      void target.offsetWidth;            // restart the animation if re-clicked
+      target.classList.add('jump-flash');
+      setTimeout(function () { target.classList.remove('jump-flash'); }, 1700);
+    });
   });
 })();
 </script>
@@ -593,10 +607,22 @@ def render_scoreboard(analysis: dict) -> str:
     top_fix = esc(negs[0]["theme"]) if negs else "&mdash;"
     top_praise = esc(poss[0]["theme"]) if poss else "&mdash;"
 
-    def card(icon, label, value, key, cls=""):
-        return (f'<div class="stat">{icon}<div class="stat-body">'
+    def tip(title, recs, tone):
+        # Hover panel echoing the "top issues / top praise" detail from the
+        # tracking table: the leading themes on this side with their counts.
+        items = recs[:3]
+        if not items:
+            return ""
+        rows = "".join(
+            f'<div class="st-row"><span class="st-name">{esc(r["theme"])}</span>'
+            f'<span class="st-num">{r["count"]:,}</span></div>' for r in items)
+        return f'<div class="stat-tip {tone}"><div class="st-title">{title}</div>{rows}</div>'
+
+    def card(icon, label, value, key, cls="", tip_html=""):
+        tcls = " has-tip" if tip_html else ""
+        return (f'<div class="stat{tcls}">{icon}<div class="stat-body">'
                 f'<div class="stat-label">{label}</div>'
-                f'<div class="stat-value {cls}" data-stat="{key}">{value}</div></div></div>')
+                f'<div class="stat-value {cls}" data-stat="{key}">{value}</div></div>{tip_html}</div>')
 
     return (
         '<div class="scoreboard">'
@@ -604,8 +630,8 @@ def render_scoreboard(analysis: dict) -> str:
         + card(ICON_UP, "Positive", f"{pct_pos}%", "positive", "good")
         + card(ICON_DOWN, "Negative", f"{pct_neg}%", "negative", "bad")
         + card(ICON_THEMES, "Themes found", themes_count, "themes")
-        + card(ICON_FIX, "Top Critique", top_fix, "topfix", "small bad")
-        + card(ICON_PRAISE, "Top praise", top_praise, "toppraise", "small good")
+        + card(ICON_FIX, "Top Critique", top_fix, "topfix", "small bad", tip("Top issues", negs, "bad"))
+        + card(ICON_PRAISE, "Top praise", top_praise, "toppraise", "small good", tip("Most praised", poss, "good"))
         + '</div>'
     )
 
@@ -930,7 +956,7 @@ def render_history(history) -> str:
              "issues and praise shift over time." if len(hist) == 1
              else f"How this game has changed across {len(hist)} analyses (newest first).")
     return (
-        "<h2>Tracking over time</h2>"
+        "<h2 id=\"sec-tracking\">Tracking over time</h2>"
         f"<p class='trend-sub'>{intro}</p>"
         "<div class='history-wrap'><table class='history'>"
         "<thead><tr><th>Analyzed</th><th>Reviews</th><th>Positive</th><th>Negative</th>"
@@ -996,12 +1022,12 @@ def build_html(analysis: dict, title: str, refresh_state: dict = None, history: 
     if trend_section:
         charts_row = (
             '<div class="charts-row">'
-            f'<section><h2>Overview</h2>{overview_html}</section>'
+            f'<section><h2 id="sec-overview">Overview</h2>{overview_html}</section>'
             f'<section>{trend_section}</section>'
             '</div>'
         )
     else:
-        charts_row = f'<h2>Overview</h2>{overview_html}'
+        charts_row = f'<h2 id="sec-overview">Overview</h2>{overview_html}'
 
     noise_html = ""
     if noise.get("count"):
@@ -1124,7 +1150,17 @@ def build_html(analysis: dict, title: str, refresh_state: dict = None, history: 
         fdata_json = json.dumps({"reviews": filter_reviews, "cats": dict(CATEGORY_COLORS),
                                  "tl": tl_payload}, ensure_ascii=False).replace("</", "<\\/")
         filter_data_script = f'<script id="reviewdata" type="application/json">{fdata_json}</script>'
-        filter_bar = FILTER_BAR_HTML
+        nav_items = [("sec-overview", "Overview"), ("sec-themes", "Review sentiment")]
+        if history_html:
+            nav_items.append(("sec-tracking", "Tracking over time"))
+        if noise_html:
+            nav_items.append(("sec-noise", "Low-signal reviews"))
+        jump_nav = ('<span class="filter-nav"><span class="fn-label">Jump to</span>'
+                    + "".join(
+                        f'<button type="button" class="jump-btn" data-target="{tid}">{esc(name)}</button>'
+                        for tid, name in nav_items)
+                    + '</span>')
+        filter_bar = FILTER_BAR_HTML.replace("<!--JUMP_NAV-->", jump_nav)
         filter_js_block = FILTER_JS
     else:
         filter_data_script = filter_bar = filter_js_block = ""
@@ -1231,7 +1267,26 @@ def build_html(analysis: dict, title: str, refresh_state: dict = None, history: 
   .stat-body {{ min-width: 0; }}
   .stat-label {{ font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: #8f98a0; }}
   .stat-value {{ font-size: 20px; font-weight: 700; color: #fff; line-height: 1.2; }}
-  .stat-value.small {{ font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
+  .stat-value.small {{ font-size: 13px; font-weight: 600; line-height: 1.45; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
+  .stat.has-tip {{ position: relative; cursor: default; }}
+  .stat-tip {{ position: absolute; left: 0; top: calc(100% + 8px); z-index: 20; min-width: 200px; max-width: 280px; background: rgba(14,22,32,0.97); border: 1px solid #2a3a4d; border-radius: 8px; padding: 10px 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.45); opacity: 0; transform: translateY(-4px); pointer-events: none; transition: opacity .18s ease, transform .18s ease; }}
+  .stat.has-tip:hover .stat-tip {{ opacity: 1; transform: translateY(0); }}
+  .stat-tip::before {{ content: ""; position: absolute; bottom: 100%; left: 22px; border: 6px solid transparent; border-bottom-color: #2a3a4d; }}
+  .stat-tip .st-title {{ font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: #8f98a0; margin-bottom: 6px; }}
+  .stat-tip.bad .st-title {{ color: #e06c75; }}
+  .stat-tip.good .st-title {{ color: #98c379; }}
+  .stat-tip .st-row {{ display: flex; justify-content: space-between; gap: 12px; font-size: 13px; color: #c7d5e0; padding: 3px 0; line-height: 1.35; }}
+  .stat-tip .st-num {{ color: #8f98a0; font-variant-numeric: tabular-nums; flex: none; }}
+  .filter-nav {{ margin-left: auto; display: inline-flex; flex-wrap: wrap; gap: 6px; align-items: center; }}
+  .filter-nav .fn-label {{ color: #66c0f4; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; font-size: 11px; }}
+  .filter-nav .jump-btn {{ background: #0e1620; color: #8f98a0; border: 1px solid #2a3a4d; border-radius: 4px; padding: 4px 9px; font-size: 12px; cursor: pointer; transition: color .12s, border-color .12s, background .12s; }}
+  .filter-nav .jump-btn:hover {{ color: #66c0f4; border-color: #66c0f4; background: #16202d; }}
+  #sec-overview, #sec-themes, #sec-tracking, #sec-noise {{ scroll-margin-top: 16px; }}
+  .jump-flash {{ animation: jumpFlash 1.6s ease-out; border-radius: 6px; }}
+  @keyframes jumpFlash {{
+    0% {{ box-shadow: 0 0 0 8px rgba(214,178,74,0.22); background: rgba(214,178,74,0.14); }}
+    100% {{ box-shadow: 0 0 0 8px rgba(214,178,74,0); background: rgba(214,178,74,0); }}
+  }}
   .stat-value.good {{ color: #98c379; }}
   .stat-value.bad {{ color: #e06c75; }}
   .donut-wrap {{ position: relative; height: 240px; margin: 6px 0 2px; }}
@@ -1246,7 +1301,7 @@ def build_html(analysis: dict, title: str, refresh_state: dict = None, history: 
   .filterbar-label {{ color: #66c0f4; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; }}
   .filterbar label {{ color: #8f98a0; display: inline-flex; align-items: center; gap: 6px; }}
   .filterbar select {{ background: #0e1620; color: #c7d5e0; border: 1px solid #2a3a4d; border-radius: 4px; padding: 4px 6px; font-size: 12px; }}
-  .filtered-count {{ margin-left: auto; color: #8f98a0; }}
+  .filtered-count {{ color: #8f98a0; }}
   .filter-empty {{ color: #8f98a0; font-size: 14px; padding: 8px 2px 4px; }}
   .site-footer {{ background: #171a21; border-top: 1px solid #0e1620; padding: 22px 24px; text-align: center; margin-top: 48px; }}
   .footer-links {{ display: flex; gap: 18px; justify-content: center; flex-wrap: wrap; }}
@@ -1306,7 +1361,7 @@ def build_html(analysis: dict, title: str, refresh_state: dict = None, history: 
     header h1 {{ color: #111111 !important; }}
     main {{ max-width: 100%; padding: 10px 0; }}
     h2 {{ color: #111111 !important; break-after: avoid; }}
-    .navsearch, .refresh, .printbtn, .donut-hint, .trend-tip, .toggle-bar, .filterbar {{ display: none !important; }}
+    .navsearch, .refresh, .printbtn, .donut-hint, .trend-tip, .toggle-bar, .filterbar, .stat-tip, .filter-nav {{ display: none !important; }}
     #side-fix, #side-love {{ display: block !important; column-count: 1 !important; }}
     .overview, .card, .trend-wrap, .stat {{ background: #ffffff !important; border: 1px solid #d0d7de !important; box-shadow: none !important; break-inside: avoid; }}
     .example {{ break-inside: avoid; border-left-color: #d0d7de !important; }}
@@ -1331,6 +1386,7 @@ def build_html(analysis: dict, title: str, refresh_state: dict = None, history: 
     {scoreboard_html}
     {filter_bar}
     {charts_row}
+    <h2 id="sec-themes">Review sentiment</h2>
     <div class="toggle-bar">
       <div class="toggle-slider" id="toggle-slider"></div>
       <button id="btn-fix" class="toggle-btn active" onclick="showSide('fix')">Issues</button>
@@ -1340,7 +1396,7 @@ def build_html(analysis: dict, title: str, refresh_state: dict = None, history: 
     <div id="side-fix" class="theme-cols">{fix_html}</div>
     <div id="side-love" class="theme-cols" style="display:none">{love_html}</div>
     {history_html}
-    <h2>Low-signal reviews</h2>
+    <h2 id="sec-noise">Low-signal reviews</h2>
     {noise_html}
   </main>
   <footer class="site-footer">
