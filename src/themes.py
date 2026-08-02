@@ -389,6 +389,7 @@ def aggregate_themes(reviews: list, themes: list) -> list:
                 "language": r.get("language"),
                 "en": _is_english(r.get("language")),
                 "date": r.get("created_date"),
+                "updated": (r.get("updated_date") if r.get("updated_date") and r.get("updated_date") != r.get("created_date") else None),
             })
 
         # Impact score: the summed weight of every review under this theme.
@@ -453,6 +454,7 @@ def analyze_reviews(client, all_reviews: list):
                     "steamid": r.get("steamid"),
                     "voted_up": r.get("voted_up"),
                     "date": r.get("created_date"),
+                    "updated": (r.get("updated_date") if r.get("updated_date") and r.get("updated_date") != r.get("created_date") else None),
                 }
                 for r in noise_sorted[:EXAMPLES_PER_THEME]
             ],
@@ -562,6 +564,7 @@ def analyze_both(client, classified: list, on_progress=None) -> dict:
                 "voted_up": r.get("voted_up"),
                 "en": _is_english(r.get("language")),
                 "date": r.get("created_date"),
+                "updated": (r.get("updated_date") if r.get("updated_date") and r.get("updated_date") != r.get("created_date") else None),
             }
             for r in noise_sorted[:EXAMPLES_PER_THEME]
         ],

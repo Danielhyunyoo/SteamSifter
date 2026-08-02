@@ -433,9 +433,15 @@ def render_example(example: dict) -> str:
     helpful = example.get("helpful_votes", 0)
     url = example.get("url")
     voted = example.get("voted_up")
-    # Publication date, so readers can gauge how current the review is.
+    # Publication date (plus an edit date when the reviewer later amended it) so
+    # readers can gauge how current the review is and whether it was revised.
     review_date = _fmt_review_date(example.get("date"))
-    date_badge = f'<span class="badge date">{review_date}</span>' if review_date else ''
+    edited_date = _fmt_review_date(example.get("updated"))
+    if review_date:
+        label = review_date + (f' &middot; edited {edited_date}' if edited_date else '')
+        date_badge = f'<span class="badge date">{label}</span>'
+    else:
+        date_badge = ''
 
     # Steam recommend / not-recommend badge, only when we know the flag
     # (older cached analyses may not carry it).

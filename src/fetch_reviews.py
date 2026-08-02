@@ -35,6 +35,15 @@ STEAM_REVIEWS_URL = "https://store.steampowered.com/appreviews/{app_id}"
 # number of round-trips needed.
 MAX_PER_PAGE = 100
 
+# Representative sampling: besides the newest reviews, pull a slice ranked by
+# Steam's own helpfulness (the "all" filter) so high-signal reviews outside the
+# most-recent window still make the dataset. HELPFUL_FRACTION is the share of the
+# sample drawn from that helpful slice; HELPFUL_DAY_RANGE is the window (in days,
+# Steam's max is 365) its helpfulness ranking considers.
+_STEAM_FILTER = {"recent": "recent", "helpful": "all", "updated": "updated"}
+HELPFUL_FRACTION = float(os.environ.get("HELPFUL_FRACTION", "0.35"))
+HELPFUL_DAY_RANGE = int(os.environ.get("HELPFUL_DAY_RANGE", "365"))
+
 # A polite pause (in seconds) between page requests so we don't hammer Steam.
 DEFAULT_REQUEST_DELAY = float(os.environ.get("STEAM_REQUEST_DELAY", "0.5"))
 
@@ -77,6 +86,13 @@ def parse_review(raw: dict) -> dict:
         if created_ts
         else None
     )
+    # Steam bumps timestamp_updated when a reviewer later edits their review.
+    updated_ts = raw.get("timestamp_updated", 0) or 0
+    updated_date = (
+        datetime.fromtimestamp(updated_ts, tz=timezone.utc).strftime("%Y-%m-%d")
+        if updated_ts
+        else None
+    )
 
     return {
         "recommendation_id": raw.get("recommendationid"),
@@ -96,6 +112,8 @@ def parse_review(raw: dict) -> dict:
         "early_access": raw.get("written_during_early_access", False),
         "timestamp_created": created_ts,
         "created_date": created_date,
+        "timestamp_updated": updated_ts,
+        "updated_date": updated_date,
     }
 
 
@@ -109,6 +127,7 @@ def fetch_reviews(
     review_type: str = "all",
     language: str = "all",
     request_delay: float = DEFAULT_REQUEST_DELAY,
+    sort: str = "recent",
 ) -> list:
     """
     Fetch reviews for the given Steam app_id, paginating until we hit
@@ -120,6 +139,8 @@ def fetch_reviews(
         review_type:   "all", "positive", or "negative".
         language:      Review language filter (e.g. "english", "all").
         request_delay: Seconds to wait between page requests (be polite).
+        sort:          "recent" (newest), "helpful" (Steam helpfulness rank), or
+                       "updated" (most recently edited).
 
     Returns:
         A list of cleaned review dictionaries (see parse_review).
@@ -139,13 +160,17 @@ def fetch_reviews(
         # cursor (which can contain characters like '=').
         params = {
             "json": 1,
-            "filter": "recent",          # newest first; predictable ordering
+            "filter": _STEAM_FILTER.get(sort, "recent"),
             "language": language,
             "review_type": review_type,
             "purchase_type": "all",
             "num_per_page": MAX_PER_PAGE,
             "cursor": cursor,
         }
+        # The "all" filter ranks by helpfulness within a day window; widen it so
+        # the most-helpful (often older, high-signal) reviews surface too.
+        if params["filter"] == "all":
+            params["day_range"] = HELPFUL_DAY_RANGE
 
         # Make the request, with a timeout so we never hang forever.
         response = session.get(url, params=params, timeout=REQUEST_TIMEOUT)
@@ -189,27 +214,36 @@ def fetch_reviews_balanced(app_id: str, max_reviews: int = 300,
     """
     Fetch a sample with BOTH broad language coverage and a solid block of English.
 
-    A popular game's most-recent reviews can be overwhelmingly non-English, which
-    would leave the English-only filter empty even though millions of English
-    reviews exist. So we fetch a guaranteed English slice plus the global (all
-    languages) recent pool, then merge them, dedup by recommendation id, and cap
-    at max_reviews. This keeps the most-helpful foreign reviews while making the
-    English view usable.
+    Two goals: keep the English-only view usable on foreign-dominated titles, and
+    avoid a purely recency-biased sample. So we fetch a guaranteed English slice
+    and the global recent pool, PLUS a slice ranked by Steam's helpfulness (its
+    "all" filter) so high-signal reviews outside the newest window are represented.
+    The three are merged, deduped by recommendation id, and capped at max_reviews.
     """
     en_target = max(1, int(max_reviews * ENGLISH_FRACTION))
-    # Fetch the English slice and the all-languages pool CONCURRENTLY: they are
-    # independent paginations, so overlapping them removes the shorter one from
-    # the wall-clock instead of adding to it.
+    helpful_target = max(0, int(max_reviews * HELPFUL_FRACTION))
+    # Fetch three slices CONCURRENTLY (independent paginations, so overlapping them
+    # removes the shorter ones from the wall-clock instead of adding to it):
+    #   1. a guaranteed English slice (recent),
+    #   2. the all-language recent pool (bulk),
+    #   3. a most-helpful slice (Steam's "all" ranking) so the sample is not
+    #      purely the newest reviews.
     from concurrent.futures import ThreadPoolExecutor
-    with ThreadPoolExecutor(max_workers=2) as pool:
+    with ThreadPoolExecutor(max_workers=3) as pool:
         f_en = pool.submit(fetch_reviews, app_id, max_reviews=en_target,
-                           review_type=review_type, language="english")
+                           review_type=review_type, language="english", sort="recent")
         f_all = pool.submit(fetch_reviews, app_id, max_reviews=max_reviews,
-                            review_type=review_type, language="all")
+                            review_type=review_type, language="all", sort="recent")
+        f_help = (pool.submit(fetch_reviews, app_id, max_reviews=helpful_target,
+                              review_type=review_type, language="all", sort="helpful")
+                  if helpful_target else None)
         english = f_en.result()
         everything = f_all.result()
+        helpful = f_help.result() if f_help else []
+    # English first (guaranteed), then the most-helpful slice (often older,
+    # high-signal reviews), then fill with the recent pool. Dedup by review id.
     merged, seen = [], set()
-    for r in english + everything:           # English first, so it is guaranteed
+    for r in english + helpful + everything:
         rid = r.get("recommendation_id")
         if rid and rid in seen:
             continue
