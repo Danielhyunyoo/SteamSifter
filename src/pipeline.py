@@ -22,7 +22,7 @@ import os
 import re
 import time
 
-from llm import get_client, generate_json
+from llm import get_client, generate_json, effort_for
 from pydantic import BaseModel
 from fetch_reviews import (fetch_reviews, fetch_reviews_balanced, save_reviews,
                            fetch_review_total, fetch_player_summaries, fetch_game_context,
@@ -127,7 +127,7 @@ def _translate_batch(client, batch, force: bool = False) -> None:
             f"{numbered}"
         )
     try:
-        results = generate_json(client, prompt, list[_Translation]) or []
+        results = generate_json(client, prompt, list[_Translation], effort=effort_for("translate")) or []
     except Exception as err:
         print(f"  Translation batch failed ({err}); leaving as-is.")
         return

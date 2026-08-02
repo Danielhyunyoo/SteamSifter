@@ -24,7 +24,7 @@ from typing import Literal
 from pydantic import BaseModel
 
 # Reuse the LLM client + structured-output helper we built in llm.py.
-from llm import get_client, generate_json
+from llm import get_client, generate_json, effort_for
 
 
 # ----------------------------------------------------------------------------
@@ -99,7 +99,7 @@ def classify_review(client, review_text: str) -> ReviewClassification:
         A ReviewClassification (sentiment, category, reason).
     """
     prompt = build_prompt(review_text)
-    return generate_json(client, prompt, ReviewClassification)
+    return generate_json(client, prompt, ReviewClassification, effort=effort_for("classify"))
 
 
 # ----------------------------------------------------------------------------

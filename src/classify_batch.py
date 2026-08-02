@@ -24,7 +24,7 @@ from typing import Literal
 from pydantic import BaseModel
 
 # Reuse the client/helper and the category list we already defined.
-from llm import get_client, generate_json
+from llm import get_client, generate_json, effort_for
 from classify import ReviewCategory
 
 
@@ -126,7 +126,7 @@ def classify_batch(client, texts: list, context: str = "") -> list:
     for attempt in range(1, MAX_RETRIES + 1):
         try:
             # a list[...] schema makes the model return a JSON array.
-            results = generate_json(client, prompt, list[BatchClassification])
+            results = generate_json(client, prompt, list[BatchClassification], effort=effort_for("classify"))
             return results or []
         except Exception as err:
             # Most likely a rate-limit (429) hiccup. Back off and try again.

@@ -140,7 +140,7 @@ def _majority_category(reviews):
 
 def _label_cluster(client, reviews, category):
     """Ask the LLM to name/describe a single cluster from a few representatives."""
-    from llm import generate_json
+    from llm import generate_json, effort_for
 
     sample = sorted(
         reviews,
@@ -169,7 +169,7 @@ def _label_cluster(client, reviews, category):
         "emotional for general mood, nostalgia, or a farewell.\n\n"
         f"Reviews:\n{block}"
     )
-    return generate_json(client, prompt, ClusterLabel)
+    return generate_json(client, prompt, ClusterLabel, effort=effort_for("theme"))
 
 
 def merge_similar_clusters(vectors, labels):
@@ -230,7 +230,7 @@ def _dedupe_themes(client, labeled):
 
     labeled / return: list of (members, name, description, kind, category).
     """
-    from llm import generate_json
+    from llm import generate_json, effort_for
 
     if len(labeled) < 2:
         return labeled
@@ -250,7 +250,7 @@ def _dedupe_themes(client, labeled):
         f"Themes:\n{block}"
     )
     try:
-        groups = generate_json(client, prompt, list[_MergeGroup]) or []
+        groups = generate_json(client, prompt, list[_MergeGroup], effort=effort_for("theme")) or []
     except Exception as err:
         print(f"  Theme dedupe failed ({err}); keeping themes as-is.")
         return labeled
@@ -294,7 +294,7 @@ def _label_clusters_batched(client, items):
     {label: (name, description, kind, category)}, with a safe fallback for any
     cluster the model omits.
     """
-    from llm import generate_json
+    from llm import generate_json, effort_for
 
     meta, blocks = {}, []
     for i, (lab, members) in enumerate(items):
@@ -318,7 +318,7 @@ def _label_clusters_batched(client, items):
         "nostalgia, or a farewell). Return one object per cluster with its index.\n\n"
         + "\n\n".join(blocks)
     )
-    results = generate_json(client, prompt, list[_BatchClusterLabel]) or []
+    results = generate_json(client, prompt, list[_BatchClusterLabel], effort=effort_for("theme")) or []
     by_i = {r.index: r for r in results}
     out = {}
     for i, (lab, category) in meta.items():

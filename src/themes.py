@@ -29,7 +29,7 @@ from typing import Literal
 from pydantic import BaseModel
 
 # Reuse our client/helper, the category type, and the batching settings.
-from llm import get_client, generate_json
+from llm import get_client, generate_json, effort_for
 from classify import ReviewCategory
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from classify_batch import BATCH_SIZE, DELAY_BETWEEN_BATCHES, MAX_REVIEW_CHARS, MAX_WORKERS
@@ -126,7 +126,7 @@ def discover_themes(client, reviews: list, target: str = TARGET_THEME_COUNT) -> 
         f"Reviews:\n{reviews_block}"
     )
 
-    themes = generate_json(client, prompt, list[ThemeDef])
+    themes = generate_json(client, prompt, list[ThemeDef], effort=effort_for("theme"))
     return themes or []
 
 
@@ -166,7 +166,7 @@ def _assign_one(client, batch: list, themes: list, canonical: dict) -> None:
     results = []
     for attempt in range(1, 3):
         try:
-            results = generate_json(client, prompt, list[ThemeAssignment]) or []
+            results = generate_json(client, prompt, list[ThemeAssignment], effort=effort_for("classify")) or []
             break
         except Exception as err:
             print(f"  Assign batch failed (attempt {attempt}): {err}")

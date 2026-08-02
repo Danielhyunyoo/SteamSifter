@@ -16,6 +16,8 @@ Relevant .env settings:
   GEMINI_API_KEY   your Gemini key   (falls back to LLM_API_KEY)
   OPENAI_API_KEY   your OpenAI key   (falls back to LLM_API_KEY)
   LLM_MODEL        optional model override; blank uses the provider default
+  OPENAI_REASONING_EFFORT   global GPT-5.x reasoning level (none/low/medium/high/xhigh/max)
+  OPENAI_EFFORT_CLASSIFY / _TRANSLATE / _THEME   per-task overrides of the above
 
 Run "python src/llm.py" for a quick connectivity self-test.
 """
@@ -34,6 +36,32 @@ load_dotenv()
 PROVIDER = os.environ.get("LLM_PROVIDER", "gemini").lower()
 GEMINI_DEFAULT_MODEL = "gemini-2.5-flash-lite"
 OPENAI_DEFAULT_MODEL = "gpt-4.1-mini"
+
+
+# Per-task reasoning effort for GPT-5.x ("none" through "max"). Models without a
+# reasoning dial (e.g. gpt-4.1-mini) and Gemini ignore it, so these stay safe to
+# leave set while experimenting or rolling back. Mechanical tasks (bucketing a
+# review, translating a quote) default low to stay fast and cheap; theme
+# discovery/naming defaults a touch higher where reasoning sharpens the wording.
+_EFFORT_DEFAULTS = {"classify": "low", "translate": "low", "theme": "medium"}
+
+
+def effort_for(task: str) -> str:
+    """Resolve reasoning effort for a task: a task-specific env override, else the
+    global OPENAI_REASONING_EFFORT, else a sensible built-in default."""
+    specific = os.environ.get(f"OPENAI_EFFORT_{task.upper()}")
+    if specific is not None:
+        return specific.strip()
+    glob = os.environ.get("OPENAI_REASONING_EFFORT")
+    if glob:
+        return glob.strip()
+    return _EFFORT_DEFAULTS.get(task, "low")
+
+
+def _supports_reasoning(model: str) -> bool:
+    """True for OpenAI models that accept a reasoning_effort dial (GPT-5.x, o-series)."""
+    m = (model or "").lower()
+    return m.startswith(("gpt-5", "o1", "o3", "o4"))
 
 
 def _default_model() -> str:
@@ -86,7 +114,7 @@ def _gemini_generate(client, prompt: str, schema, model: str):
     return response.parsed
 
 
-def _openai_generate(client, prompt: str, schema, model: str):
+def _openai_generate(client, prompt: str, schema, model: str, effort: str = None):
     """
     Structured generation via OpenAI.
 
@@ -95,6 +123,10 @@ def _openai_generate(client, prompt: str, schema, model: str):
     it in a small container model, then unwrap the result.
     """
     origin = typing.get_origin(schema)
+    extra = {}
+    # reasoning_effort only applies to models that have the dial; ignored otherwise.
+    if effort and _supports_reasoning(model):
+        extra["reasoning_effort"] = effort
 
     if origin in (list,):
         item_type = typing.get_args(schema)[0]
@@ -104,6 +136,7 @@ def _openai_generate(client, prompt: str, schema, model: str):
             model=model,
             messages=[{"role": "user", "content": prompt}],
             response_format=container,
+            **extra,
         )
         return completion.choices[0].message.parsed.items
 
@@ -112,11 +145,12 @@ def _openai_generate(client, prompt: str, schema, model: str):
         model=model,
         messages=[{"role": "user", "content": prompt}],
         response_format=schema,
+        **extra,
     )
     return completion.choices[0].message.parsed
 
 
-def generate_json(client, prompt: str, schema, model: str = None):
+def generate_json(client, prompt: str, schema, model: str = None, effort: str = None):
     """
     Ask the configured provider for structured output matching a Pydantic schema.
 
@@ -131,7 +165,7 @@ def generate_json(client, prompt: str, schema, model: str = None):
     """
     model = model or _default_model()
     if PROVIDER == "openai":
-        return _openai_generate(client, prompt, schema, model)
+        return _openai_generate(client, prompt, schema, model, effort)
     return _gemini_generate(client, prompt, schema, model)
 
 
