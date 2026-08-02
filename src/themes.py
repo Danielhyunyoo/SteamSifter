@@ -373,9 +373,15 @@ def aggregate_themes(reviews: list, themes: list) -> list:
             if len(picked) >= EXAMPLES_PER_THEME:
                 break
         info = meta.get(theme_name, {"description": "", "category": "other", "kind": "feature"})
-        examples = [
-            {
-                "text": relevant_snippet(r["text"], theme_name, info["description"], info["category"]),
+        examples = []
+        for r in picked:
+            snippet = relevant_snippet(r["text"], theme_name, info["description"], info["category"])
+            full = (r.get("text") or "").strip()
+            examples.append({
+                "text": snippet,
+                # Full review text for the in-report "read full review" expander, only
+                # when it is meaningfully longer than the shown snippet (saves payload).
+                "full": full[:1500] if len(full) > len(snippet) + 40 else None,
                 "helpful_votes": r.get("helpful_votes", 0),
                 "playtime_at_review_hours": r.get("playtime_at_review_hours", 0),
                 "steamid": r.get("steamid"),
@@ -383,9 +389,7 @@ def aggregate_themes(reviews: list, themes: list) -> list:
                 "language": r.get("language"),
                 "en": _is_english(r.get("language")),
                 "date": r.get("created_date"),
-            }
-            for r in picked
-        ]
+            })
 
         # Impact score: the summed weight of every review under this theme.
         impact = round(sum(review_impact(r) for r in items), 1)

@@ -197,22 +197,29 @@ FILTER_JS = """
 
   function recompute() {
     var f = filters();
-    var fr = reviews.filter(function (r) { return match(r, f); });
+    var activeCat = window.__activeCat || null;
+    // Base filters (recommendation/playtime/language) drive the donut so it keeps
+    // showing every category; the donut category pick narrows everything else.
+    var frBase = reviews.filter(function (r) { return match(r, f); });
+    var fr = activeCat ? frBase.filter(function (r) { return r.ca === activeCat; }) : frBase;
 
     var st = { positive: 0, negative: 0, neutral: 0 };
     fr.forEach(function (r) { if (st[r.se] !== undefined) st[r.se]++; });
     var tot = st.positive + st.negative + st.neutral;
 
-    var cats = {}, themes = {};
+    var themes = {};
     fr.forEach(function (r) {
       if (r.co === 1 && r.th) {
-        cats[r.ca] = (cats[r.ca] || 0) + 1;
         var k = r.sd + '|' + r.th;
         var t = themes[k] || (themes[k] = { count: 0, impact: 0, side: r.sd, name: r.th });
         t.count++; t.impact += weight(r);
       }
     });
     var noise = fr.filter(function (r) { return r.co === 0; }).length;
+
+    // Donut categories ignore the active pick, so every slice stays selectable.
+    var cats = {};
+    frBase.forEach(function (r) { if (r.co === 1 && r.th) cats[r.ca] = (cats[r.ca] || 0) + 1; });
 
     // Scoreboard
     setStat('reviews', fr.length);
@@ -241,6 +248,7 @@ FILTER_JS = """
       dc.data.labels = ce.map(function (e) { return e[0]; });
       dc.data.datasets[0].data = ce.map(function (e) { return e[1]; });
       dc.data.datasets[0].backgroundColor = ce.map(function (e) { return catColors[e[0]] || '#7f848e'; });
+      dc.data.datasets[0].offset = ce.map(function (e) { return e[0] === activeCat ? 14 : 0; });
       dc.update('none');
     }
 
@@ -310,6 +318,19 @@ FILTER_JS = """
     var fc = document.getElementById('filteredCount');
     if (fc) fc.textContent = fr.length + ' of ' + reviews.length + ' reviews';
 
+    // Category filter chip, driven by donut clicks (see the donut onClick handler).
+    var chip = document.getElementById('catChip');
+    if (activeCat) {
+      if (!chip) {
+        chip = document.createElement('button');
+        chip.id = 'catChip'; chip.type = 'button'; chip.className = 'cat-chip';
+        chip.addEventListener('click', function () { window.__activeCat = null; recompute(); });
+        var bar = document.getElementById('filterbar'); if (bar) bar.appendChild(chip);
+      }
+      chip.innerHTML = 'Category: <strong>' + activeCat + '</strong> \u2715';
+      chip.style.display = '';
+    } else if (chip) { chip.style.display = 'none'; }
+
     // Example quotes: show those matching the filter, cap 2 per theme.
     document.querySelectorAll('.example').forEach(function (ex) {
       var vu = ex.getAttribute('data-vu'), pt = parseFloat(ex.getAttribute('data-pt')) || 0, en = ex.getAttribute('data-en');
@@ -326,11 +347,27 @@ FILTER_JS = """
         if (ex.style.display !== 'none') { shown++; if (shown > 2) ex.style.display = 'none'; }
       });
     });
+
+    // A visible theme can still match reviews the curated quotes do not cover (e.g. a
+    // narrow playtime + language filter). Keep the accurate count, but explain the gap
+    // instead of leaving the card blank.
+    document.querySelectorAll('.card').forEach(function (card) {
+      if (card.style.display === 'none') return;
+      var box = card.querySelector('.examples'); if (!box) return;
+      var anyVisible = Array.prototype.some.call(box.querySelectorAll('.example'), function (ex) { return ex.style.display !== 'none'; });
+      var note = box.querySelector('.no-quote');
+      if (!anyVisible) {
+        if (!note) { note = document.createElement('div'); note.className = 'no-quote'; box.appendChild(note); }
+        note.textContent = 'No preview quote matches the current filters, though matching reviews are still counted above.';
+        note.style.display = '';
+      } else if (note) { note.style.display = 'none'; }
+    });
   }
 
   ['f-rec', 'f-pt', 'f-lang'].forEach(function (id) {
     var e = document.getElementById(id); if (e) e.addEventListener('change', recompute);
   });
+  window.__recompute = recompute;
 
   // Jump-to nav: smooth-scroll to a section, then briefly flash its header.
   Array.prototype.forEach.call(document.querySelectorAll('.jump-btn'), function (b) {
@@ -424,6 +461,12 @@ def render_example(example: dict) -> str:
     trans_html = (f'<div class="translation">EN: &ldquo;{esc(translation)}&rdquo;</div>'
                   if translation else '')
 
+    # Optional "read full review" expander, shown only when we carried the full text.
+    full = example.get("full")
+    more_html = (f'<details class="more"><summary>Read full review</summary>'
+                 f'<div class="fulltext">&ldquo;{esc(full)}&rdquo;</div></details>'
+                 if full else '')
+
     # Reviewer avatar + name, so two identical quotes read as distinct people.
     avatar = example.get("author_avatar")
     aname = example.get("author_name")
@@ -441,6 +484,7 @@ def render_example(example: dict) -> str:
         f'{author_html}'
         f'{quote_html}'
         f'{trans_html}'
+        f'{more_html}'
         '<span class="badges">'
         f'{thumb}'
         f'{date_badge}'
@@ -560,7 +604,7 @@ def render_overview(sentiment_totals: dict, total_reviews: int, noise_count: int
         f'<div class="legend" id="sentimentLegend">{legend}</div>'
         '<div class="ov-title">By category <span class="ov-sub">share of categorized reviews</span></div>'
         '<div class="donut-wrap"><canvas id="catDonut"></canvas></div>'
-        '<div class="donut-hint">Tip: click a category in the legend to show or hide it.</div>'
+        '<div class="donut-hint">Tip: click a slice to filter the report to that category (click again to clear); legend clicks show or hide a slice.</div>'
         f'{filtered_line}'
         '</div>'
     )
@@ -741,6 +785,12 @@ CHARTS_JS = """
                            borderColor: '#16202d', borderWidth: 2 }] },
       options: {
         responsive: true, maintainAspectRatio: false, cutout: '62%',
+        onClick: function (evt, els) {
+          if (!els || !els.length) return;
+          var cat = donutChart.data.labels[els[0].index];
+          window.__activeCat = (window.__activeCat === cat) ? null : cat;   // toggle
+          if (window.__recompute) window.__recompute();
+        },
         plugins: {
           legend: { position: narrow ? 'bottom' : 'right', labels: { boxWidth: 12, padding: 10 } },
           tooltip: { callbacks: { label: function (c) {
@@ -1235,6 +1285,15 @@ def build_html(analysis: dict, title: str, refresh_state: dict = None, history: 
   .badges {{ display: block; margin-top: 4px; }}
   .badge {{ display: inline-block; font-size: 11px; background: #2a3f5a; color: #c7d5e0; border-radius: 3px; padding: 1px 7px; margin-right: 6px; }}
   .badge.date {{ background: transparent; border: 1px solid #2a3f5a; color: #8f98a0; }}
+  .cat-chip {{ border: 1px solid #66c0f4; background: rgba(102,192,244,0.12); color: #66c0f4; border-radius: 4px; padding: 4px 9px; font-size: 12px; cursor: pointer; }}
+  .cat-chip:hover {{ background: rgba(102,192,244,0.2); }}
+  .no-quote {{ color: #8f98a0; font-size: 12px; font-style: italic; padding: 4px 0; }}
+  .more {{ margin: 2px 0 4px; }}
+  .more summary {{ color: #66c0f4; font-size: 12px; cursor: pointer; list-style: none; display: inline-block; }}
+  .more summary::-webkit-details-marker {{ display: none; }}
+  .more summary:hover {{ text-decoration: underline; }}
+  .more[open] summary {{ margin-bottom: 5px; }}
+  .fulltext {{ color: #c7d5e0; font-size: 13px; line-height: 1.5; white-space: pre-wrap; background: rgba(14,22,32,0.5); border-left: 2px solid #2a3f5a; padding: 7px 10px; border-radius: 0 4px 4px 0; }}
   .unclear {{ background: #16202d; border: 1px solid #2a475e; border-left: 3px solid #66c0f4; border-radius: 3px; padding: 14px 16px; font-size: 14px; color: #8f98a0; margin-top: 10px; }}
   .empty {{ color: #8f98a0; font-style: italic; }}
   .overview {{ background: rgba(22, 32, 45, 0.72); border: 1px solid #2a3a4d; border-radius: 4px; padding: 18px 20px; margin-bottom: 8px; }}
@@ -1377,7 +1436,9 @@ def build_html(analysis: dict, title: str, refresh_state: dict = None, history: 
     header h1 {{ color: #111111 !important; }}
     main {{ max-width: 100%; padding: 10px 0; }}
     h2 {{ color: #111111 !important; break-after: avoid; }}
-    .navsearch, .refresh, .printbtn, .donut-hint, .trend-tip, .toggle-bar, .filterbar, .stat-tip, .filter-nav {{ display: none !important; }}
+    .navsearch, .refresh, .printbtn, .donut-hint, .trend-tip, .toggle-bar, .filterbar, .stat-tip, .filter-nav, .cat-chip {{ display: none !important; }}
+    .more summary {{ display: none !important; }}
+    .fulltext {{ display: block !important; }}
     #side-fix, #side-love {{ display: block !important; column-count: 1 !important; }}
     .overview, .card, .trend-wrap, .stat {{ background: #ffffff !important; border: 1px solid #d0d7de !important; box-shadow: none !important; break-inside: avoid; }}
     .example {{ break-inside: avoid; border-left-color: #d0d7de !important; }}
