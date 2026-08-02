@@ -382,6 +382,7 @@ def aggregate_themes(reviews: list, themes: list) -> list:
                 "voted_up": r.get("voted_up"),
                 "language": r.get("language"),
                 "en": _is_english(r.get("language")),
+                "date": r.get("created_date"),
             }
             for r in picked
         ]
@@ -447,6 +448,7 @@ def analyze_reviews(client, all_reviews: list):
                     "playtime_at_review_hours": r.get("playtime_at_review_hours", 0),
                     "steamid": r.get("steamid"),
                     "voted_up": r.get("voted_up"),
+                    "date": r.get("created_date"),
                 }
                 for r in noise_sorted[:EXAMPLES_PER_THEME]
             ],
@@ -555,6 +557,7 @@ def analyze_both(client, classified: list, on_progress=None) -> dict:
                 "steamid": r.get("steamid"),
                 "voted_up": r.get("voted_up"),
                 "en": _is_english(r.get("language")),
+                "date": r.get("created_date"),
             }
             for r in noise_sorted[:EXAMPLES_PER_THEME]
         ],

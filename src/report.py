@@ -376,6 +376,17 @@ def render_refresh(state: dict) -> str:
             f'more reviews">Re-analyze after {needed:,} more reviews</span>')
 
 
+def _fmt_review_date(s: str) -> str:
+    """Format an ISO 'YYYY-MM-DD' review date for display, e.g. 'Aug 2, 2026'."""
+    if not s:
+        return ""
+    try:
+        d = date.fromisoformat(s)
+    except (ValueError, TypeError):
+        return ""
+    return f"{d.strftime('%b')} {d.day}, {d.year}"
+
+
 def render_example(example: dict) -> str:
     """Render one example quote with credibility badges and a link to the real
     Steam review (when we have the reviewer's permalink)."""
@@ -385,6 +396,9 @@ def render_example(example: dict) -> str:
     helpful = example.get("helpful_votes", 0)
     url = example.get("url")
     voted = example.get("voted_up")
+    # Publication date, so readers can gauge how current the review is.
+    review_date = _fmt_review_date(example.get("date"))
+    date_badge = f'<span class="badge date">{review_date}</span>' if review_date else ''
 
     # Steam recommend / not-recommend badge, only when we know the flag
     # (older cached analyses may not carry it).
@@ -429,6 +443,7 @@ def render_example(example: dict) -> str:
         f'{trans_html}'
         '<span class="badges">'
         f'{thumb}'
+        f'{date_badge}'
         f'<span class="badge">{played} played</span>'
         f'<span class="badge">{helpful} helpful</span>'
         f'{source}'
@@ -1219,6 +1234,7 @@ def build_html(analysis: dict, title: str, refresh_state: dict = None, history: 
   .aname {{ font-size: 12px; color: #8f98a0; font-weight: 600; }}
   .badges {{ display: block; margin-top: 4px; }}
   .badge {{ display: inline-block; font-size: 11px; background: #2a3f5a; color: #c7d5e0; border-radius: 3px; padding: 1px 7px; margin-right: 6px; }}
+  .badge.date {{ background: transparent; border: 1px solid #2a3f5a; color: #8f98a0; }}
   .unclear {{ background: #16202d; border: 1px solid #2a475e; border-left: 3px solid #66c0f4; border-radius: 3px; padding: 14px 16px; font-size: 14px; color: #8f98a0; margin-top: 10px; }}
   .empty {{ color: #8f98a0; font-style: italic; }}
   .overview {{ background: rgba(22, 32, 45, 0.72); border: 1px solid #2a3a4d; border-radius: 4px; padding: 18px 20px; margin-bottom: 8px; }}

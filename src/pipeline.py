@@ -147,8 +147,9 @@ def _attach_translations(analysis: dict, client) -> None:
 
     A first pass lets the model detect and translate foreign quotes (any script,
     ignoring the unreliable Steam tag). A second pass then force-translates any
-    clearly non-Latin quote (CJK, Hangul, Cyrillic, etc.) the first pass skipped,
-    so foreign reviews are never left untranslated.
+    quote the first pass skipped that is likely foreign, either flagged non-English
+    by its Steam language tag (so Latin-script languages like Spanish are covered)
+    or containing non-Latin script, so foreign reviews are never left untranslated.
     """
     examples = []
     for rec in analysis.get("negative", []) + analysis.get("positive", []):
@@ -169,9 +170,12 @@ def _attach_translations(analysis: dict, client) -> None:
 
     _run([examples[s:s + BATCH] for s in range(0, len(examples), BATCH)])
 
-    # Safety net: force-translate obvious non-Latin quotes the first pass missed.
+    # Safety net: force-translate anything the detection pass left untranslated that
+    # is likely foreign, either flagged non-English by its Steam language tag (catches
+    # Latin-script languages like Spanish/French the first pass skipped) or non-Latin.
     missed = [ex for ex in examples
-              if not ex.get("translation") and _looks_non_latin(ex.get("text", ""))]
+              if not ex.get("translation")
+              and (ex.get("en") == 0 or _looks_non_latin(ex.get("text", "")))]
     _run([missed[s:s + BATCH] for s in range(0, len(missed), BATCH)], force=True)
 
 
